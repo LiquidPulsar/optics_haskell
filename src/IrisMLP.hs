@@ -1,55 +1,26 @@
 {-# LANGUAGE TupleSections #-}
 
-module Iris where
+module IrisMLP where
 
-import Numeric.Datasets.Iris (Iris, IrisClass (..), iris, irisClass, petalLength, petalWidth, sepalLength, sepalWidth)
+import Numeric.Datasets.Iris (IrisClass, irisClass, iris)
 import Loss
 import Types
 import Core
 import Optim
 import Numeric.LinearAlgebra
-import qualified Data.Vector.Storable as VS
 import Control.Arrow
 import Models
 import Control.Applicative
 import Data.Functor
-import Data.Function
 import Layers
-
-
-irisToVec :: Iris -> RVector
-irisToVec =
-  fromList
-    . flip
-      map
-      [ sepalLength,
-        sepalWidth,
-        petalLength,
-        petalWidth
-      ]
-    . (&)
-
-oneHot :: Int -> Int -> RVector
-oneHot s i = konst 0 s VS.// [(i, 1)]
-
-irisClassToLabel :: IrisClass -> RVector
-irisClassToLabel = oneHot 3 . fromEnum
-
-labelToIrisClass :: RVector -> IrisClass
-labelToIrisClass = toEnum . maxIndex
-
-irisToLabel :: Iris -> RVector
-irisToLabel = irisClassToLabel . irisClass
-
-irisTargets :: [(RVector, RVector)]
-irisTargets = map (irisToVec &&& irisToLabel) iris
+import Iris (irisTargets, labelToIrisClass, irisToVec, initParams)
 
 --
 
-type IrisParams = MMP
+type IrisParams = (MMP, MMP)
 
 irisModel :: ParaLens' (Inp RVector, IrisParams) () (Out RVector)
-irisModel = argToPara .#. matMulLens . sigmoid
+irisModel = argToPara .#. matMulLens . sigmoid .#. matMulLens . sigmoid
 
 irisModelLoss :: ParaLens' ((Inp RVector, IrisParams), Tgt RVector) () (Out R)
 irisModelLoss = irisModel .#. lossSmooth
@@ -60,18 +31,12 @@ irisModel' = irisModel .#. lossSmooth . lrSmooth 0.01
 irisEpoch :: IrisParams -> IrisParams
 irisEpoch mmp = trainMany irisModel' mmp irisTargets
 
-initParams :: Int -> Int -> IO (Matrix Double, Vector Double)
-initParams inputDim outputDim = do
-  w <- rand outputDim inputDim
-  b <- flatten <$> rand outputDim 1
-  let f x = scale 0.01 (x - 0.5)
-  return (f w, f b)
+irisInitParamsMLP :: IO IrisParams
+irisInitParamsMLP = liftA2 (,) (initParams 4 3) (initParams 3 3)
 
-irisInitParams :: IO IrisParams
-irisInitParams = initParams 4 3
 
 irisBestParams :: IO [IrisParams]
-irisBestParams = iterate irisEpoch <$> irisInitParams
+irisBestParams = iterate irisEpoch <$> irisInitParamsMLP
 
 irisGetEpoch :: Int -> IO IrisParams
 irisGetEpoch i = irisBestParams <&> (!! i)
