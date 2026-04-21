@@ -1,9 +1,13 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MonoLocalBinds #-}
 
 module Optim where
 
 import Control.Lens
 import Core
+import Numeric.LinearAlgebra
 
 type LRLens l l' = Lens l l' () ()
 type LRLens' l = LRLens l l
@@ -33,11 +37,48 @@ gradUpdate = lens id (+)
 withGradDesc :: (Num p) => ParaLens p p a a' b b' -> ParaLens p p a a' b b'
 withGradDesc = repara gradUpdate
 
--- gradUpdate' :: forall p p' . (Integral p, Num p, Integral p', Num p') => Lens p p p p'
--- gradUpdate' = lens id genPlus
 
--- genPlus :: (Integral p, Num p, Integral p', Num p', Integral p'', Num p'') => p -> p' -> p''
--- genPlus a b = fromIntegral $ a + fromIntegral b
+-- Could drop the Num p instance at some perf cost if we use an extra negate call after using Num (t p)
+momrev :: (Linear p t, Num p, Num (t p)) => p -> (t p, t p) -> t p -> (t p, t p)
+momrev gamma (v, p) p' = (v', p + v')
+  where v' = scale (-gamma) v + p'
 
--- gradUpdateMatrix :: Lens' RMatrix RMatrix
--- gradUpdateMatrix = gradUpdate
+type Momentum p = forall t. (Num p, Num (t p), Linear p t, Container t p, Floating (t R)) => Lens' (t p, t p) (t p)
+
+momentum :: forall p t. (Num p, Num (t p), Linear p t) => p -> Lens' (t p, t p) (t p)
+momentum = lens snd . momrev
+
+nesterov :: forall p t. (Num p, Num (t p), Linear p t) => p -> Lens' (t p, t p) (t p)
+nesterov gamma = lens (uncurry fwd) (momrev gamma)
+  where
+    -- fwd (v, p) = p + scale gamma v
+    fwd = (+) . scale gamma
+
+adaGrad :: R -> Momentum R
+adaGrad eps = lens snd rev
+  where
+    delta :: R
+    delta = 1e-7
+
+    -- rev :: (t R, t R) -> t R -> (t R, t R)
+    rev (g, p) p' = (g', p + update * p')
+      where
+        g' = g + p * p'
+        update = scale eps . recip . cmap (delta +) $ sqrt g' -- yeah I don't like hmatrix, why is "addConstant" internal aaaaaa
+
+-- Note: paper mentions a corrected estimate tracking time?
+adam :: forall t. (Num (t R), Linear R t, Container t R, Floating (t R)) 
+          => R -> R -> R -> Lens' ((t R, t R), t R) (t R)
+adam β1 β2 ε = lens snd rev
+  where
+    delta :: R
+    delta = 1e-8
+
+    -- m: exp decaying avg of past grads
+    -- v: exp decaying avg of past sq grads
+    rev :: ((t R, t R), t R) -> t R -> ((t R, t R), t R)
+    rev ((m, v), p) p' = ((m', v'), p + scale ε update)
+      where
+        m'     = scale β1 m + scale (1 - β1) p'
+        v'     = scale β2 v + scale (1 - β2) (p' * p')
+        update = m' / cmap ((delta +) . sqrt) v'

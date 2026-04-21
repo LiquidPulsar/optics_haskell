@@ -83,7 +83,7 @@ alongsideIso i i' = iso (ac *** ac') (db *** db')
 
 rotate :: Iso ((a,b),c) ((a',b'),c') (a,(b,c)) (a',(b',c'))
 rotate = iso fwd rev
-    where
+  where
     fwd ((a,b),c) = (a,(b,c))
     rev (a,(b,c)) = ((a,b),c)
 
@@ -104,3 +104,6 @@ infixr 8 .#. -- one less than (.) so that we can do things like: "a .#. b . c .#
 
 --     z :: Lens ((p,q),a) ((p',q'),a') (q,b) (q',b')
 --     z = x . y
+
+liftUpdate :: Lens' p p -> Lens' [p] [p]
+liftUpdate ul = lens (map $ view ul) (\ps gs -> zipWith (set ul) gs ps)

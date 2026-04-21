@@ -1,57 +1,31 @@
 {-# LANGUAGE TupleSections #-}
 
-module Iris where
+module IrisMLPMom where
 
-import Numeric.Datasets.Iris (Iris, IrisClass (..), iris, irisClass, petalLength, petalWidth, sepalLength, sepalWidth)
+import Numeric.Datasets.Iris (IrisClass, irisClass, iris)
 import Loss
 import Types
 import Core
 import Optim
 import Numeric.LinearAlgebra
-import qualified Data.Vector.Storable as VS
 import Control.Arrow
 import Models
 import Control.Applicative
 import Data.Functor
-import Data.Function
 import Layers
-import qualified Data.List as L
-import Data.Maybe
-
-
-irisToVec :: Iris -> RV
-irisToVec =
-  fromList
-    . flip
-      map
-      [ sepalLength,
-        sepalWidth,
-        petalLength,
-        petalWidth
-      ]
-    . (&)
-
-oneHot :: Int -> Int -> RV
-oneHot s i = konst 0 s VS.// [(i, 1)]
-
-irisClassToLabel :: IrisClass -> RV
-irisClassToLabel = oneHot 3 . fromEnum
-
-labelToIrisClass :: RV -> IrisClass
-labelToIrisClass = toEnum . maxIndex
-
-irisToLabel :: Iris -> RV
-irisToLabel = irisClassToLabel . irisClass
-
-irisTargets :: [(RV, RV)]
-irisTargets = map (irisToVec &&& irisToLabel) iris
+import Iris (irisTargets, labelToIrisClass, irisToVec, initParams)
+import Control.Monad
 
 --
 
-type IParams = MMP
+type MMPMom = (MMP, MMP)
+type IParams = (MMPMom, MMPMom)
 
 irisModel :: ParaLens' (Inp RV, IParams) () (Out RV)
-irisModel = argToPara .#. matMulLens . sigmoid
+irisModel = argToPara .#. m .#. m
+  where
+    m :: ParaLens' (MMP, MMP) RV RV
+    m = matMulLensMom 0.7 . sigmoid
 
 irisModelLoss :: ParaLens' ((Inp RV, IParams), Tgt RV) () (Out R)
 irisModelLoss = irisModel .#. lossSmooth
@@ -62,18 +36,22 @@ irisModel' = irisModel .#. lossSmooth . lrSmooth 0.01
 irisEpoch :: IParams -> IParams
 irisEpoch mmp = trainMany irisModel' mmp irisTargets
 
-initParams :: Int -> Int -> IO (Matrix Double, Vector Double)
-initParams inputDim outputDim = do
-  w <- rand outputDim inputDim
-  b <- flatten <$> rand outputDim 1
-  let f x = scale 0.01 (x - 0.5)
-  return (f w, f b)
+blankMMP :: Int -> Int -> MMP
+blankMMP i o = (konst 0 (o,i), konst 0 o)
+
+initParamsMom :: Int -> Int -> IO MMPMom
+initParamsMom i o = (blankMMP i o,) <$> initParams i o
 
 irisInitParams :: IO IParams
-irisInitParams = initParams 4 3
+irisInitParams = liftA2 (,) (initParamsMom 4 3) (initParamsMom 3 3)
 
 irisBestParams :: IO [IParams]
 irisBestParams = iterate irisEpoch <$> irisInitParams
+
+-- irisBestParams :: IO [IParams]
+-- -- start with the same params twice, ideally could maybe do
+-- -- Maybe on the prev but shouldn't be meaningfully different
+-- irisBestParams = iterate irisEpoch . join (,) <$> irisInitParamsMLP
 
 irisGetEpoch :: Int -> IO IParams
 irisGetEpoch i = irisBestParams <&> (!! i)
@@ -96,6 +74,3 @@ irisAccuracy mmp = sum tgts / fromIntegral (length tgts)
 
 irisRes :: IO [(R, R)]
 irisRes = map (irisError &&& irisAccuracy) <$> irisBestParams
-
-epochsToAcc :: R -> [R] -> Int
-epochsToAcc r = fst . fromJust . L.find ((>=r) . snd) . zip [0..]

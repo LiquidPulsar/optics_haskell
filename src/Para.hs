@@ -7,9 +7,11 @@ import Core
 import Examples
 import Iris
 import IrisMLP
+import IrisMLPMom
 import Layers
 import Loss
 import Models
 import Optim
 import Sample
 import Types
+import MnistCNN

@@ -17,40 +17,40 @@ import Iris (irisTargets, labelToIrisClass, irisToVec, initParams)
 
 --
 
-type IrisParams = (MMP, MMP)
+type IParams = (MMP, MMP)
 
-irisModel :: ParaLens' (Inp RVector, IrisParams) () (Out RVector)
+irisModel :: ParaLens' (Inp RV, IParams) () (Out RV)
 irisModel = argToPara .#. matMulLens . sigmoid .#. matMulLens . sigmoid
 
-irisModelLoss :: ParaLens' ((Inp RVector, IrisParams), Tgt RVector) () (Out R)
+irisModelLoss :: ParaLens' ((Inp RV, IParams), Tgt RV) () (Out R)
 irisModelLoss = irisModel .#. lossSmooth
 
-irisModel' :: ParaLRLens' ((Inp RVector, IrisParams), Tgt RVector) ()
+irisModel' :: ParaLRLens' ((Inp RV, IParams), Tgt RV) ()
 irisModel' = irisModel .#. lossSmooth . lrSmooth 0.01
 
-irisEpoch :: IrisParams -> IrisParams
+irisEpoch :: IParams -> IParams
 irisEpoch mmp = trainMany irisModel' mmp irisTargets
 
-irisInitParamsMLP :: IO IrisParams
-irisInitParamsMLP = liftA2 (,) (initParams 4 3) (initParams 3 3)
+irisInitParams :: IO IParams
+irisInitParams = liftA2 (,) (initParams 4 3) (initParams 3 3)
 
 
-irisBestParams :: IO [IrisParams]
-irisBestParams = iterate irisEpoch <$> irisInitParamsMLP
+irisBestParams :: IO [IParams]
+irisBestParams = iterate irisEpoch <$> irisInitParams
 
-irisGetEpoch :: Int -> IO IrisParams
+irisGetEpoch :: Int -> IO IParams
 irisGetEpoch i = irisBestParams <&> (!! i)
 
-irisError :: IrisParams -> R
+irisError :: IParams -> R
 irisError = sum . flip map irisTargets . runOne irisModelLoss
 
-irisPredict :: IrisParams -> Inp RVector -> Tgt RVector
+irisPredict :: IParams -> Inp RV -> Tgt RV
 irisPredict mmp = runFullModel irisModel . (,mmp)
 
-irisPredict' :: IrisParams -> Inp RVector -> IrisClass
+irisPredict' :: IParams -> Inp RV -> IrisClass
 irisPredict' mmp = labelToIrisClass . irisPredict mmp
 
-irisAccuracy :: IrisParams -> R
+irisAccuracy :: IParams -> R
 irisAccuracy mmp = sum tgts / fromIntegral (length tgts)
   where
     predict = irisPredict' mmp . irisToVec

@@ -16,19 +16,19 @@ import Layers
 -- MODELS --
 -------------------------
 
-example :: ParaLens' (Inp RVector, (MMP, MMP)) () (Out RVector)
+example :: ParaLens' (Inp RV, (MMP, MMP)) () (Out RV)
 example = argToPara .#. matMulLens . relu .#. matMulLens . relu
 
-example' :: ParaLRLens' ((Inp RVector, (MMP, MMP)), Tgt RVector) ()
+example' :: ParaLRLens' ((Inp RV, (MMP, MMP)), Tgt RV) ()
 example' = example .#. lossSmooth . lrSmooth 1
 
-targetV :: RVector
+targetV :: RV
 targetV = fromList [1, 2, 3]
 
-inputV :: RVector
+inputV :: RV
 inputV = fromList [3, 2, 1]
 
-params :: (RVector, (MMP, MMP))
+params :: (RV, (MMP, MMP))
 params =
   ( targetV,
     ( ((2 >< 3) [1, 2, 2, 3, 5, 6], fromList [0, 1]),
@@ -38,16 +38,16 @@ params =
 
 ----------
 
-exampleMini :: ParaLens' (Inp RVector, MMP) () (Out RVector)
+exampleMini :: ParaLens' (Inp RV, MMP) () (Out RV)
 exampleMini = argToPara .#. matMulLens -- . relu
 
-exampleMiniLoss :: ParaLens' ((Inp RVector, MMP), Tgt RVector) () (Out R)
+exampleMiniLoss :: ParaLens' ((Inp RV, MMP), Tgt RV) () (Out R)
 exampleMiniLoss = exampleMini .#. lossSmooth
 
-exampleMini' :: ParaLRLens' ((Inp RVector, MMP), Tgt RVector) ()
+exampleMini' :: ParaLRLens' ((Inp RV, MMP), Tgt RV) ()
 exampleMini' = exampleMini .#. lossSmooth . lrSmooth 0.01
 
-inputMini :: RVector
+inputMini :: RV
 inputMini = fromList [0, 1]
 
 optimalParams :: MMP
@@ -56,78 +56,78 @@ optimalParams = ((2 >< 2) [1, 2, 3, 4], fromList [0, 1])
 initialParams :: MMP
 initialParams = ((2 >< 2) [-1, 1, -1, 1], fromList [0.5, 0.5])
 
-runOptimal :: RVector -> RVector
+runOptimal :: RV -> RV
 runOptimal = runFullModel exampleMini . (,optimalParams)
 
-genTargets :: [Inp RVector] -> [(Inp RVector, Tgt RVector)]
+genTargets :: [Inp RV] -> [(Inp RV, Tgt RV)]
 genTargets = map (id &&& runOptimal)
 
-targetMini :: RVector
+targetMini :: RV
 targetMini = runOptimal inputMini -- [2,5]
 
-targets :: [(Inp RVector, Tgt RVector)]
+targets :: [(Inp RV, Tgt RV)]
 targets = genTargets [fromList [a, b] | a <- [0 .. 2], b <- [1 .. 3]]
 
 --
 
-exampleMMini :: ParaLens' (Inp RVector, RMatrix) () (Out RVector)
+exampleMMini :: ParaLens' (Inp RV, RM) () (Out RV)
 exampleMMini = argToPara .#. withGradDesc linear
 
-exampleMMiniLoss :: ParaLens' ((Inp RVector, RMatrix), Tgt RVector) () (Out R)
+exampleMMiniLoss :: ParaLens' ((Inp RV, RM), Tgt RV) () (Out R)
 exampleMMiniLoss = exampleMMini .#. lossSmooth
 
-exampleMMini' :: ParaLRLens' ((Inp RVector, RMatrix), Tgt RVector) ()
+exampleMMini' :: ParaLRLens' ((Inp RV, RM), Tgt RV) ()
 exampleMMini' = exampleMMini .#. lossSmooth . lrSmooth 0.01
 
-optimalParamsM :: RMatrix
+optimalParamsM :: RM
 optimalParamsM = (1 >< 1) [0.5]
 
-initParamsM :: RMatrix
+initParamsM :: RM
 initParamsM = (1 >< 1) [-0.5]
 
-inputMMini :: RVector
+inputMMini :: RV
 inputMMini = fromList [2]
 
-targetMMini :: RVector
+targetMMini :: RV
 targetMMini = runFullModel exampleMMini (inputMMini, optimalParamsM) -- [0.5]
 
-runOptimalM :: RVector -> RVector
+runOptimalM :: RV -> RV
 runOptimalM = runFullModel exampleMMini . (,optimalParamsM)
 
-genTargetsM :: [Inp RVector] -> [(Inp RVector, Tgt RVector)]
+genTargetsM :: [Inp RV] -> [(Inp RV, Tgt RV)]
 genTargetsM = map (id &&& runOptimalM)
 
-targetsM :: [(Inp RVector, Tgt RVector)]
+targetsM :: [(Inp RV, Tgt RV)]
 targetsM = genTargetsM $ map (fromList . pure) [0 .. 3]
 
 --
 
-exampleMMiniB :: ParaLens' (Inp RMatrix, RMatrix) () (Out RMatrix)
+exampleMMiniB :: ParaLens' (Inp RM, RM) () (Out RM)
 exampleMMiniB = argToPara .#. withGradDesc linear
 
--- exampleMMiniLossB :: ParaLens' ((Inp RVector, RMatrix), Tgt RVector) () (Out R)
+-- exampleMMiniLossB :: ParaLens' ((Inp RV, RM), Tgt RV) () (Out R)
 -- exampleMMiniLossB = exampleMMiniB .#. lossSmooth
 
--- exampleMMiniB' :: ParaLRLens' ((Inp RVector, RMatrix), Tgt RVector) ()
+-- exampleMMiniB' :: ParaLRLens' ((Inp RV, RM), Tgt RV) ()
 -- exampleMMiniB' = exampleMMiniB .#. lossSmooth . lrSmooth 0.01
 
--- optimalParamsMB :: RMatrix
+-- optimalParamsMB :: RM
 -- optimalParamsMB = (1 >< 1) [0.5]
 
--- initParamsMB :: RMatrix
+-- initParamsMB :: RM
 -- initParamsMB = (1 >< 1) [-0.5]
 
--- inputMMiniB :: RVector
+-- inputMMiniB :: RV
 -- inputMMiniB = fromList [2]
 
--- targetMMiniB :: RVector
+-- targetMMiniB :: RV
 -- targetMMiniB = runFullModel exampleMMiniB (inputMMiniB, optimalParamsMB) -- [0.5]
 
--- runOptimalMB :: RVector -> RVector
+-- runOptimalMB :: RV -> RV
 -- runOptimalMB = runFullModel exampleMMiniB . (,optimalParamsMB)
 
--- genTargetsMB :: [Inp RVector] -> [(Inp RVector, Tgt RVector)]
+-- genTargetsMB :: [Inp RV] -> [(Inp RV, Tgt RV)]
 -- genTargetsMB = map (id &&& runOptimalMB)
 
--- targetsMB :: [(Inp RVector, Tgt RVector)]
+-- targetsMB :: [(Inp RV, Tgt RV)]
 -- targetsMB = genTargetsMB $ map (fromList . pure) [0 .. 3]

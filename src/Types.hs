@@ -1,11 +1,11 @@
 module Types where
 import Numeric.LinearAlgebra
 
-type RVector = Vector R
-type RMatrix = Matrix R
+type RV = Vector R
+type RM = Matrix R
 type ZVector = Vector Z
 
-type MMP = (RMatrix, RVector) -- Matmul params
+type MMP = (RM, RV) -- Matmul params
 type MMP' e = (Matrix e, Vector e)
 
 type Inp a = a
