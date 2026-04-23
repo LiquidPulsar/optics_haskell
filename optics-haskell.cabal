@@ -89,6 +89,7 @@ library
         vector ==0.13.2.0,
         datasets ==0.4.0,
         mnist-idx ==0.1.3.2,
+        time ==1.12.2,
 
     -- Directories containing source files.
     hs-source-dirs:   src

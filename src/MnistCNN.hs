@@ -6,6 +6,7 @@ import Control.Arrow
 import Control.Applicative
 import Data.Functor
 import Data.List (foldl1)
+import Data.Time (getCurrentTime, diffUTCTime)
 import System.IO (hSetBuffering, stdout, BufferMode(..))
 import qualified Data.Vector.Unboxed as VU
 import Control.Lens
@@ -119,8 +120,12 @@ loadMnist imgPath lblPath = do
 
 -- ─── Training ────────────────────────────────────────────────────────────────
 
-mnistEpoch :: [(Image, RV)] -> MnistParams -> MnistParams
-mnistEpoch targets p = trainMany mnistModel' p targets
+chunksOf :: Int -> [a] -> [[a]]
+chunksOf _ [] = []
+chunksOf n xs = take n xs : chunksOf n (drop n xs)
+
+mnistEpoch :: Int -> [(Image, RV)] -> MnistParams -> MnistParams
+mnistEpoch batch tgts p = foldl (trainMany mnistModel') p $ chunksOf batch tgts
 
 mnistPredict :: MnistParams -> Image -> Int
 mnistPredict p img = maxIndex $ runFullModel mnistModel (img, p)
@@ -136,9 +141,18 @@ mnistTrain :: IO ()
 mnistTrain = do
     hSetBuffering stdout LineBuffering
     train <- loadMnist "data/train-images-idx3-ubyte" "data/train-labels-idx1-ubyte"
+    -- print $ length train
     test  <- loadMnist "data/t10k-images-idx3-ubyte"  "data/t10k-labels-idx1-ubyte"
     p0    <- mnistInitParams
-    let epochs = iterate (mnistEpoch train) p0
+    t0  <- getCurrentTime
+    let epochs = iterate (mnistEpoch 32 $ take 64 train) p0
     forM_ (zip [0..] epochs) $ \(e, p) -> do
-        let acc = mnistAccuracy p test
-        putStrLn $ "epoch " ++ show (e :: Int) ++ "\taccuracy " ++ show acc
+        let acc = mnistAccuracy p $ take 64 test
+        t1  <- getCurrentTime
+        let (_, (_, (w, b))) = p  -- dense layer weights as a proxy
+        putStrLn $ unwords 
+            [ "epoch", show (e :: Int)
+            , "\taccuracy", show acc
+            , "\ttime", show (diffUTCTime t1 t0)
+            , "\tmean_w", show (sumElements w / fromIntegral (rows w * cols w))
+            ]

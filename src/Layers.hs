@@ -148,7 +148,7 @@ correlate2D = lens fwd rev
 
     rev (ks, img) dy = (dks, dimg)
       where
-        dks  = [ [ corr2 i d | i <- img ] | d <- dy ]
+        dks  = [ [ corr2 d i | i <- img ] | d <- dy ]
         dimg = [ foldl1 add [ conv2 (rot180 (ks_o !! ic)) d
                              | (ks_o, d) <- zip ks dy ]
                | ic <- [0..length img - 1] ]
@@ -177,7 +177,7 @@ maxPool2DChannel kh kw = lens fwd rev
         in accum (konst 0 (rows x, cols x)) (+) updates
 
 
--- TODO: Smth possible with traverse here to lift the lens up
+-- TODO: Smth possible with traverse here to lift the lens up?
 -- maxPool2D kh kw = traverse . maxPool2DChannel kh kw
 maxPool2D :: Int -> Int -> Lens' Image Image
 maxPool2D kh kw = lens fwd rev
