@@ -2,7 +2,7 @@
 
 module Iris where
 
-import Numeric.Datasets.Iris (Iris, IrisClass (..), iris, irisClass, petalLength, petalWidth, sepalLength, sepalWidth)
+import IrisData (Iris, IrisClass (..), iris, irisClass, petalLength, petalWidth, sepalLength, sepalWidth)
 import Loss
 import Types
 import Core

@@ -2,7 +2,7 @@
 
 module IrisMLP where
 
-import Numeric.Datasets.Iris (IrisClass, irisClass, iris)
+import IrisData (IrisClass, irisClass, iris)
 import Loss
 import Types
 import Core
