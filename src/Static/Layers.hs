@@ -24,6 +24,7 @@ import Control.Arrow
 
 
 import qualified Torch.Typed as T
+import Torch.Typed (Tensor(UnsafeMkTensor), toDynamic, Init, type (++))
 import qualified Torch as U
 import GHC.TypeNats
 
@@ -54,26 +55,46 @@ linear :: (Sample f, Floating e, Numeric e) => ParaLens' (Matrix e) (f e) (f e)
 linear = lens (uncurry applyLinear) rev
   where rev (m, x) y = (accumGrad y x, tr m `applyLinear` y)
 
+transp :: Tensor device dtype shape -> Tensor device dtype (T.SetValue (T.SetValue shape 0 (T.GetValue shape 1)) 1 (T.GetValue shape 0))
+transp = T.transpose @0 @1
+
+linear''
+  :: forall batch i o device dtype
+   . ( T.All KnownNat [i, o, batch]
+     , T.MatMulDTypeIsValid device dtype
+     )
+  => ParaLens' (Tensor device dtype '[o, i])
+               (Tensor device dtype '[batch, i])
+               (Tensor device dtype '[batch, o])
+linear'' = lens fwd rev
+  where
+    fwd (w, x) = T.matmul x $ transp w
+
+    rev (w, x) grad = (dW, dx)
+      where
+        dW = T.matmul (transp grad) x
+        dx = T.matmul grad w
+
 linear'
   :: forall t i o shape device dtype
-   . ( t ~ T.Tensor device dtype
+   . ( t ~ Tensor device dtype
      , T.IsSuffixOf '[i] shape
      , KnownNat i
      , KnownNat o
-     , T.KnownShape shape
+    --  , T.KnownShape shape
      )
   => ParaLens' (t '[o, i])
                (t shape)
-               (t (T.Init shape T.++ '[o]))
+               (t (Init shape ++ '[o]))
 linear' = lens fwd rev
   where
-    fwd :: (t '[o, i], t shape) -> t (T.Init shape T.++ '[o])
-    fwd (w, x) = T.UnsafeMkTensor $
+    fwd :: (t '[o, i], t shape) -> t (Init shape ++ '[o])
+    fwd (w, x) = UnsafeMkTensor $
       -- [..., i] @ [i, o] -> [..., o]
-      U.matmul (T.toDynamic x) (T.toDynamic $ T.transpose @0 @1 w)
+      U.matmul (toDynamic x) (toDynamic $ T.transpose @0 @1 w)
 
     rev :: (t '[o, i], t shape)
-        -> t (T.Init shape T.++ '[o])
+        -> t (Init shape ++ '[o])
         -> (t '[o, i], t shape)
     rev (w, x) grad = (dW, dx)
       where
@@ -82,18 +103,18 @@ linear' = lens fwd rev
 
         -- reshape to [batch, o] and [batch, i], then grad^T @ x -> [o, i]
         dW :: t '[o, i]
-        dW = T.UnsafeMkTensor $
-          let g = U.reshape [-1, o] (T.toDynamic grad)
-              x' = U.reshape [-1, i] (T.toDynamic x)
+        dW = UnsafeMkTensor $
+          let g = U.reshape [-1, o] (toDynamic grad)
+              x' = U.reshape [-1, i] (toDynamic x)
           in U.matmul (U.transpose2D g) x'
 
         -- [..., o] @ [o, i] -> [..., i]
         dx :: t shape
-        dx = T.UnsafeMkTensor $ U.matmul (T.toDynamic grad) (T.toDynamic w)
+        dx = UnsafeMkTensor $ U.matmul (toDynamic grad) (toDynamic w)
 
 
 
--- type Tensor = T.Tensor
+-- type Tensor = Tensor
 
 -- type family Init (xs :: [Nat]) :: [Nat] where
 --   Init '[_]      = '[]
@@ -179,7 +200,7 @@ linear' = lens fwd rev
 -- Note: Can be better with fully known shapes
 addLens'
   :: forall shape shape' shape'' device dtype t
-   . ( t ~ T.Tensor device dtype
+   . ( t ~ Tensor device dtype
      , T.BasicArithmeticDTypeIsValid device dtype
      , T.SumDTypeIsValid device dtype
      , T.SumDType dtype ~ dtype
@@ -212,7 +233,7 @@ addLens' = lens fwd rev
       where
         -- Safe as shape is suffix of shape' so multiples will work
         x'' :: t (w:shape) -- There exists a w, doesn't really matter what it is
-        x'' = T.UnsafeMkTensor $ U.reshape (-1 : T.shapeVal @shape) $ T.toDynamic x'
+        x'' = UnsafeMkTensor $ U.reshape (-1 : T.shapeVal @shape) $ toDynamic x'
 
         x''' :: t shape
         x''' = T.sumDim @0 x''
@@ -242,7 +263,7 @@ sigmoid = lens (cmap expit) rev
 
 sigmoid'
   :: forall shape device dtype t
-   . ( t ~ T.Tensor device dtype
+   . ( t ~ Tensor device dtype
      , shape ~ T.Broadcast shape shape
      , T.StandardFloatingPointDTypeValidation device dtype
      , T.KnownDevice device
@@ -258,7 +279,7 @@ relu = lens (cmap $ max 0) ((*) . step)
 
 relu'
   :: forall shape device dtype t
-   . ( t ~ T.Tensor device dtype
+   . ( t ~ Tensor device dtype
       , shape ~ T.Broadcast shape shape
       , T.StandardFloatingPointDTypeValidation device dtype
       , T.KnownDevice device
@@ -273,7 +294,7 @@ relu' = lens T.relu rev
 
 heaviside
   :: forall shape device dtype t
-   . ( t ~ T.Tensor device dtype
+   . ( t ~ Tensor device dtype
       , shape ~ T.Broadcast shape shape
       , T.StandardFloatingPointDTypeValidation device dtype
       , T.ComparisonDTypeIsValid device dtype
