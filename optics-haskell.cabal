@@ -77,6 +77,8 @@ library
         Sample
         Types
         MnistCNN
+        Static.Layers
+        IrisData
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

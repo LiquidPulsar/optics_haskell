@@ -15,3 +15,4 @@ import Optim
 import Sample
 import Types
 import MnistCNN
+import Static.Layers
