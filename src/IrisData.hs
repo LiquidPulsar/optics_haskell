@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module IrisData (Iris, IrisClass (..), iris, irisClass, petalLength, petalWidth, sepalLength, sepalWidth) where
 
@@ -8,9 +10,10 @@ import Data.Char
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.Vector as V
+import GHC.Generics
 
 data IrisClass = Setosa | Versicolor | Virginica
-  deriving (Show, Eq, Ord, Enum, Bounded)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic)
 
 data Iris = Iris
   { sepalLength :: Double
@@ -18,17 +21,14 @@ data Iris = Iris
   , petalLength :: Double
   , petalWidth  :: Double
   , irisClass   :: IrisClass
-  } deriving (Show)
+  } deriving (Generic, Show, FromRecord)
 
 instance FromField IrisClass where
   parseField s = case BC.map toLower s of
     "setosa"     -> pure Setosa
     "versicolor" -> pure Versicolor
     "virginica"  -> pure Virginica
-    _            -> fail $ "Unknown iris class: " Prelude.<> BC.unpack s
-
-instance FromRecord Iris where
-  parseRecord v = Iris <$> v .! 0 <*> v .! 1 <*> v .! 2 <*> v .! 3 <*> v .! 4
+    _            -> fail $ "Unknown iris class: " ++ BC.unpack s
 
 loadIris :: FilePath -> IO (Either String (V.Vector Iris))
 loadIris path = decode HasHeader <$> BL.readFile path

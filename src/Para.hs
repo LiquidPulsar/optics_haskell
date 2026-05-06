@@ -16,3 +16,4 @@ import Sample
 import Types
 import MnistCNN
 import Static.Layers
+import Static.Iris

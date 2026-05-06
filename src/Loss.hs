@@ -2,7 +2,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Loss where
 
-import Control.Applicative
 import Control.Arrow
 import Control.Lens
 import Control.Monad
@@ -12,7 +11,6 @@ import Data.Tuple (swap)
 import qualified Data.Vector.Storable as VS
 import Numeric.LinearAlgebra
 import Types
-import Sample
 
 -------------------------
 -- LOSS MAP --

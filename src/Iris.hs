@@ -11,7 +11,6 @@ import Numeric.LinearAlgebra
 import qualified Data.Vector.Storable as VS
 import Control.Arrow
 import Models
-import Control.Applicative
 import Data.Functor
 import Data.Function
 import Layers
