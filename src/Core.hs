@@ -106,4 +106,5 @@ infixr 8 .#. -- one less than (.) so that we can do things like: "a .#. b . c .#
 --     z = x . y
 
 liftUpdate :: Lens' p p -> Lens' [p] [p]
-liftUpdate ul = lens (map $ view ul) (\ps gs -> zipWith (set ul) gs ps)
+liftUpdate ul = lens (map $ view ul) $ flip (zipWith (set ul))
+-- liftUpdate ul = lens (map $ view ul) (\ps gs -> zipWith (set ul) gs ps)

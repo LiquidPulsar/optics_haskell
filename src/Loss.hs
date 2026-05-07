@@ -66,8 +66,7 @@ softMaxCELoss = lens fwd rev
 
     rev :: (RV, RV) -> R -> (RV, RV)
     rev (bt, bp) = splitScale (-log q, q - bt)
-      where
-        q = softMax bp
+      where q = softMax bp
 
 deepDreamLoss :: ParaLens' RV RV R
 deepDreamLoss = lens fwd rev

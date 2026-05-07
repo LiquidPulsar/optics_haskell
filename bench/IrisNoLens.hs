@@ -1,47 +1,42 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module IrisNoLens where
 
-import GHC.Generics
-import Control.Monad (foldM)
-
-import Torch
-import qualified Torch.Functional as F
 import Control.DeepSeq
+import Control.Monad (foldM)
+import GHC.Generics
+import Torch hiding (step)
 
 --------------------------------------------------------------------------------
 -- PARAMETERS
 --------------------------------------------------------------------------------
 
 data IrisModelSpec = IrisModelSpec
-  { inputFeatures  :: Int
-  , outputFeatures :: Int
+  { inputFeatures :: Int,
+    outputFeatures :: Int
   }
 
-data IrisModel = IrisModel
-  { linearLayer :: Linear
-  }
+newtype IrisModel = IrisModel { linearLayer :: Linear }
   deriving (Generic, Show, NFData)
 
-instance NFData Parameter where
+instance NFData Parameter
 
-instance NFData Linear where
-  rnf (Linear weight bias) =
-    rnf weight `seq`
-    rnf bias
+deriving instance NFData Linear -- where
+  -- rnf (Linear weight bias) =
+  --   rnf weight `seq` rnf bias
 
 instance Parameterized IrisModel
 
 instance Randomizable IrisModelSpec IrisModel where
-  sample IrisModelSpec{..} =
-    IrisModel
-      <$> sample
-            (LinearSpec inputFeatures outputFeatures)
+  sample IrisModelSpec {..} =
+    IrisModel <$> sample (LinearSpec inputFeatures outputFeatures)
 
 --------------------------------------------------------------------------------
 -- MODEL
@@ -51,13 +46,8 @@ instance Randomizable IrisModelSpec IrisModel where
 --
 -- matMulLens . sigmoid
 --
-irisModel
-  :: IrisModel
-  -> Tensor
-  -> Tensor
-irisModel IrisModel{..} input =
-  sigmoid $
-    linear linearLayer input
+irisModel :: IrisModel -> Tensor -> Tensor
+irisModel IrisModel {..} = sigmoid . linear linearLayer
 
 --------------------------------------------------------------------------------
 -- LOSS
@@ -67,18 +57,8 @@ irisModel IrisModel{..} input =
 --
 -- irisModel .#. lossSmooth
 --
-irisModelLoss
-  :: IrisModel
-  -> Tensor
-  -> Tensor
-  -> Tensor
-irisModelLoss model input target =
-  binaryCrossEntropyLoss'
-    target
-    prediction
-  where
-    prediction =
-      irisModel model input
+irisModelLoss :: IrisModel -> Tensor -> Tensor -> Tensor
+irisModelLoss model input target = binaryCrossEntropyLoss' target $ irisModel model input
 
 --------------------------------------------------------------------------------
 -- TRAIN STEP
@@ -88,29 +68,9 @@ irisModelLoss model input target =
 --
 -- irisModel .#. lossSmooth . lrSmooth 0.01
 --
-irisTrainStep
-  :: Optimizer o
-  => IrisModel
-  -> o
-  -> Tensor
-  -> Tensor
-  -> IO IrisModel
-irisTrainStep model optimizer input target = do
-
-  let loss =
-        irisModelLoss
-          model
-          input
-          target
-
-  (newModel, _) <-
-    runStep
-      model
-      optimizer
-      loss
-      1e-2
-
-  pure newModel
+irisTrainStep :: (Optimizer o) => IrisModel -> o -> Tensor -> Tensor -> IO IrisModel
+irisTrainStep model optimizer input target = fst <$> runStep model optimizer loss 1e-2
+  where loss = irisModelLoss model input target
 
 --------------------------------------------------------------------------------
 -- TRAIN MANY
@@ -120,21 +80,9 @@ irisTrainStep model optimizer input target = do
 --
 -- trainMany irisModel' params irisTargets
 --
-irisEpoch
-  :: Optimizer o
-  => IrisModel
-  -> o
-  -> [(Tensor, Tensor)]
-  -> IO IrisModel
-irisEpoch initModel optimizer dataset =
-  foldM step initModel dataset
-  where
-    step model (input, target) =
-      irisTrainStep
-        model
-        optimizer
-        input
-        target
+irisEpoch :: (Optimizer o) => IrisModel -> o -> [(Tensor, Tensor)] -> IO IrisModel
+irisEpoch initModel optimizer = foldM step initModel
+  where step model = uncurry $ irisTrainStep model optimizer
 
 --------------------------------------------------------------------------------
 -- FULL TRAINING
@@ -144,13 +92,13 @@ irisEpoch initModel optimizer dataset =
 --
 -- iterate irisEpoch <$> irisInitParams
 --
-irisTrain
-  :: Optimizer o
-  => Int
-  -> IrisModel
-  -> o
-  -> [(Tensor, Tensor)]
-  -> IO IrisModel
+irisTrain ::
+  (Optimizer o) =>
+  Int ->
+  IrisModel ->
+  o ->
+  [(Tensor, Tensor)] ->
+  IO IrisModel
 irisTrain epochs initModel optimizer dataset =
   foldM step initModel [1 .. epochs]
   where
@@ -168,10 +116,10 @@ irisTrain epochs initModel optimizer dataset =
 --
 -- runFullModel irisModel . (, params)
 --
-irisPredict
-  :: IrisModel
-  -> Tensor
-  -> Tensor
+irisPredict ::
+  IrisModel ->
+  Tensor ->
+  Tensor
 irisPredict =
   irisModel
 
@@ -183,10 +131,10 @@ irisPredict =
 --
 -- labelToIrisClass
 --
-irisPredictClass
-  :: IrisModel
-  -> Tensor
-  -> [Int]
+irisPredictClass ::
+  IrisModel ->
+  Tensor ->
+  [Int]
 irisPredictClass model input =
   asValue $
     argmax
@@ -203,56 +151,22 @@ irisPredictClass model input =
 -- ACCURACY
 --------------------------------------------------------------------------------
 
-irisAccuracy
-  :: IrisModel
-  -> [(Tensor, Tensor)]
-  -> Double
-irisAccuracy model dataset =
-  fromIntegral correct
-    / fromIntegral total
+irisAccuracy :: IrisModel -> [(Tensor, Tensor)] -> Double
+irisAccuracy model dataset = fromIntegral correct / fromIntegral total
   where
-
     batchResults =
       flip map dataset $
         \(input, target) ->
+          let parse = concat . asValue @[[Int]] . argmax (Dim 1) RemoveDim
+           in zipWith (==) (parse (irisPredict model input)) (parse target)
 
-          let predicted =
-                asValue @[[Int]] $
-                  argmax
-                    (Dim 1)
-                    RemoveDim
-                    (irisPredict model input)
-
-              actual =
-                asValue @[[Int]] $
-                  argmax
-                    (Dim 1)
-                    RemoveDim
-                    target
-
-           in zipWith
-                (==)
-                (concat predicted)
-                (concat actual)
-
-    results =
-      concat batchResults
-
-    correct =
-      length $
-        filter id results
-
-    total =
-      length results
+    results = concat batchResults
+    correct = length $ filter id results
+    total = length results
 
 --------------------------------------------------------------------------------
 -- INITIALIZATION
 --------------------------------------------------------------------------------
 
-irisInitModel
-  :: IO IrisModel
-irisInitModel =
-  sample $
-    IrisModelSpec
-      4
-      3
+irisInitModel :: IO IrisModel
+irisInitModel = sample $ IrisModelSpec 4 3
