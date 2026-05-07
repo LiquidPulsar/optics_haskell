@@ -11,9 +11,10 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.Vector as V
 import GHC.Generics
+import Control.DeepSeq
 
 data IrisClass = Setosa | Versicolor | Virginica
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData)
 
 data Iris = Iris
   { sepalLength :: Double

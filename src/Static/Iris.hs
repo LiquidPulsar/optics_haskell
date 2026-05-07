@@ -16,7 +16,7 @@ import Core
 import Data.Function
 import IrisData
 import Static.Layers ( sigmoid, matMulLens, MMP, CanMMLens )
-import Torch (TensorLike (asTensor), oneHot, asValue)
+import Torch (TensorLike (asTensor), oneHot, asValue, toDType, Tensor, toDevice, toType)
 import qualified Torch.Typed as T
 import Torch.Functional.Internal (narrow_tlll)
 import Types (Inp, Out, Tgt)
@@ -44,12 +44,23 @@ irisToVec =
 
 type NumIris = 150
 
-irisToTensor :: [Iris] -> (T.Tensor device dtype '[NumIris, 4], T.Tensor device dtype '[NumIris, 3])
+convert :: forall device dtype shape. (T.KnownDevice device, T.KnownDType dtype) => Tensor -> T.Tensor device dtype shape
+convert = T.UnsafeMkTensor
+        . toDevice (T.deviceVal @device)
+        . toType   (T.dtypeVal  @dtype)
+
+irisToTensor
+  :: forall device dtype
+   . ( T.KnownDType dtype
+     , T.KnownDevice device
+     )
+  => [Iris]
+  -> ( T.Tensor device dtype '[NumIris, 4]
+     , T.Tensor device dtype '[NumIris, 3] )
 irisToTensor = feats &&& classes
   where
-    -- TODO: match devices
-    feats = T.UnsafeMkTensor . asTensor . map irisToVec
-    classes = T.UnsafeMkTensor . oneHot 3 . asTensor . map (fromEnum . irisClass)
+    feats   = convert . asTensor . map irisToVec
+    classes = convert . oneHot 3 . asTensor . map (fromEnum . irisClass)
 
 sliceBatch
   :: forall batchSize features n device dtype
@@ -69,13 +80,14 @@ batches dataset = [ sliceBatch @batch (i * b) dataset | i <- [0 .. (n `div` b) -
     n = fromIntegral . natVal $ Proxy @n
 
 
-irisTargets :: [(T.Tensor device dtype '[BatchSize, 4], T.Tensor device dtype '[BatchSize, 3])]
+irisTargets :: (T.KnownDType dtype, T.KnownDevice device) => [(T.Tensor device dtype '[BatchSize, 4], T.Tensor device dtype '[BatchSize, 3])]
 irisTargets = zip (batches inps) (batches tgts)
   where (inps, tgts) = irisToTensor iris
 
 type IParams device dtype = MMP device dtype 3 4
 
 type SaneDT device dtype = (
+    T.KnownDType dtype,
     T.StandardFloatingPointDTypeValidation device dtype
     , CanMMLens device dtype
   )
