@@ -13,7 +13,6 @@
 
 module Static.Layers where
 
-import Control.Arrow
 import Control.Lens
 import Control.Monad
 import Core
@@ -22,13 +21,10 @@ import Core
 
 import Data.Proxy
 import GHC.TypeNats
-import Numeric.LinearAlgebra
 import Optim
-import Sample
 import qualified Torch as U
 import Torch.Typed (Init, Tensor (UnsafeMkTensor), toDynamic, type (++))
 import qualified Torch.Typed as T
-import Types hiding (MMP)
 
 {-
 Goal	                        Use

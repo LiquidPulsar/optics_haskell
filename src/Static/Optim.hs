@@ -9,8 +9,6 @@ module Static.Optim where
 
 import Control.Lens
 import Core
-import Torch (TensorLike)
-import Torch.Tensor (TensorLike (asTensor))
 import qualified Torch.Typed as T
 
 type LRLens l l' = Lens l l' () ()

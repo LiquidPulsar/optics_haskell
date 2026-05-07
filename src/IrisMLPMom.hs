@@ -10,11 +10,9 @@ import Optim
 import Numeric.LinearAlgebra
 import Control.Arrow
 import Models
-import Control.Applicative
 import Data.Functor
 import Layers
 import Iris (irisTargets, labelToIrisClass, irisToVec, initParams)
-import Control.Monad
 
 --
 

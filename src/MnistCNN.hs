@@ -2,10 +2,6 @@
 module MnistCNN where
 
 import Numeric.LinearAlgebra
-import Control.Arrow
-import Control.Applicative
-import Data.Functor
-import Data.List (foldl1)
 import Data.Time (getCurrentTime, diffUTCTime)
 import System.IO (hSetBuffering, stdout, BufferMode(..))
 import qualified Data.Vector.Unboxed as VU
@@ -21,6 +17,7 @@ import Models
 import Data.Foldable
 import Iris (initParams)
 import Data.Maybe
+import Control.Arrow
 
 
 -- (conv1 kernels, conv2 kernels, dense params)
@@ -30,8 +27,8 @@ type MnistParams = (Kernels, (Kernels, MMP))
 
 reluImg :: Lens' Image Image
 reluImg = lens (map $ cmap (max 0)) rev
-  where
-    rev img dy = zipWith (\i d -> step i * d) img dy
+  where rev = zipWith ((*) . step)
+    -- rev img dy = zipWith (\i d -> step i * d) img dy
 
 maxPool2DImg :: Int -> Int -> Lens' Image Image
 maxPool2DImg kh kw = lens fwd rev
@@ -39,7 +36,8 @@ maxPool2DImg kh kw = lens fwd rev
     cl :: Lens' (Matrix Double) (Matrix Double)
     cl = maxPool2DChannel kh kw
     fwd           = map (view cl)
-    rev xs dys    = zipWith (\x dy -> set cl dy x) xs dys
+    rev = zipWith (flip $ set cl)
+    -- rev xs dys    = zipWith (\x dy -> set cl dy x) xs dys
 
 -- ─── Flatten ─────────────────────────────────────────────────────────────────
 
@@ -50,10 +48,11 @@ flattenImg = lens fwd rev
     fwd = vjoin . map flatten
 
     rev img dv =
-        let shapes = map (\m -> (rows m, cols m)) img
+        let shapes = map (rows &&& cols) img
             sizes  = map (uncurry (*)) shapes
             vecs   = takesV sizes dv
-        in zipWith (\(r, c) v -> reshape c v) shapes vecs
+        in zipWith (reshape . snd) shapes vecs
+        -- in zipWith (\(r, c) v -> reshape c v) shapes vecs
 
 -- ─── Model ───────────────────────────────────────────────────────────────────
 
@@ -113,8 +112,8 @@ loadMnist imgPath lblPath = do
     Just imgs <- decodeIDXFile imgPath
     Just lbls <- decodeIDXLabelsFile lblPath
     let pairs = fromJust $ labeledDoubleData lbls imgs
-    return [ (mnistToImage $ reshape 28 $ fromList $ map realToFrac $ VU.toList xs, oneHot 10 l)
-           | (l, xs) <- pairs ]
+    return [ (mnistToImage $ reshape 28 $ fromList $ map realToFrac $ VU.toList xs, oneHot 10 l')
+           | (l', xs) <- pairs ] -- l' to avoid shadowing
   where
     oneHot n i = fromList [ if j == i then 1 else 0 | j <- [0..n-1] ]
 
@@ -149,7 +148,7 @@ mnistTrain = do
     forM_ (zip [0..] epochs) $ \(e, p) -> do
         let acc = mnistAccuracy p $ take 64 test
         t1  <- getCurrentTime
-        let (_, (_, (w, b))) = p  -- dense layer weights as a proxy
+        let (_, (_, (w, _))) = p  -- dense layer weights as a proxy
         putStrLn $ unwords 
             [ "epoch", show (e :: Int)
             , "\taccuracy", show acc
