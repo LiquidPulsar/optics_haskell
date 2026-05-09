@@ -16,24 +16,13 @@ module Static.Layers where
 import Control.Lens
 import Control.Monad
 import Core
--- I can't import a type (*) as qualified??
--- import qualified GHC.TypeLits as TL (type (+))
-
 import Data.Proxy
 import GHC.TypeNats
 import Optim
 import qualified Torch as U
 import Torch.Typed (Init, Tensor (UnsafeMkTensor), toDynamic, type (++))
 import qualified Torch.Typed as T
-
-{-
-Goal	                        Use
-Apply R -> R to vector	        cmap
-Apply R -> R -> R	            zipWith
-Create vector from Int -> R	    build
-Scale vector	                scale
-Square elements	                v * v
--}
+import Control.Arrow
 
 -------------------------
 -- CARTESIAN REVERSE DIFFERENTIAL CATEGORIES --
@@ -43,17 +32,12 @@ Square elements	                v * v
 -- LAYERS --
 -------------------------
 
---                                                        m           x     y
--- linear :: (Sample f, Floating e, Numeric e) => ParaLens' (Matrix e) (f e) (f e)
--- linear = lens (uncurry applyLinear) rev
---   where rev (m, x) y = (accumGrad y x, tr m `applyLinear` y)
-
 transp :: Tensor device dtype shape -> Tensor device dtype (T.SetValue (T.SetValue shape 0 (T.GetValue shape 1)) 1 (T.GetValue shape 0))
 transp = T.transpose @0 @1
 
 linear ::
   forall batch i o device dtype.
-  ( T.All KnownNat [i, o, batch],
+  (
     T.MatMulDTypeIsValid device dtype
   ) =>
   ParaLens'
@@ -68,6 +52,7 @@ linear = lens fwd rev
       where
         dW = T.matmul (transp grad) x
         dx = T.matmul grad w
+{-# INLINE linear #-}
 
 linear' ::
   forall t i o shape device dtype.
@@ -110,88 +95,6 @@ linear' = lens fwd rev
         dx :: t shape
         dx = UnsafeMkTensor $ U.matmul (toDynamic grad) (toDynamic w)
 
--- type Tensor = Tensor
-
--- type family Init (xs :: [Nat]) :: [Nat] where
---   Init '[_]      = '[]
---   Init (x ': xs) = x ': Init xs
-
--- sumSamples'
---   :: forall shape o batch device dtype
---    . ( o ~ T.Last shape
---     --  , KnownNat o
---      , T.KnownShape shape
---      , batch ~ (T.Numel shape `Div` o)
---     --  , KnownNat batch
---      , T.SumDType dtype ~ dtype, T.SumDTypeIsValid device dtype
---      , T.Numel shape ~ T.Product (o ': Init shape)
---      )
---   => Tensor device dtype shape
---   -> Tensor device dtype '[o]
--- -- sumSamples' = sumDim @0 . reshape @('[batch, o] :: [Nat])
--- sumSamples' t =
---   let flat = T.reshape t :: Tensor device dtype '[T.Product (Init shape), o]
---   in  T.sumDim @0 flat
-
--- A simple linear layer: y = x @ W^T + b
--- myLinear
---   :: forall batchSize inFeatures outFeatures device dtype
---    . ( T.All KnownNat '[batchSize, inFeatures, outFeatures]
---      , T.KnownDevice device
---      , T.MatMulDTypeIsValid device dtype
---      , T.StandardFloatingPointDTypeValidation device dtype )
---   => Tensor device dtype '[outFeatures, inFeatures]  -- weight W
---   -> Tensor device dtype '[outFeatures]               -- bias b
---   -> Tensor device dtype '[batchSize, inFeatures]     -- input x
---   -> Tensor device dtype '[batchSize, outFeatures]    -- output y
--- myLinear weight bias input =
---   -- matmul: [b, i] @ [i, o] = [b, o]
---   -- then broadcast-add bias [o]
---   T.matmul input (T.transpose @0 @1 weight) + bias
-
--- addLens'
---   :: forall shape o device dtype t
---    . ( t ~ Tensor device dtype -- for neatness
---      , KnownNat o
---     --  , T.IsSuffixOf '[o] shape
---      , T.Last shape ~ o
---      , T.BasicArithmeticDTypeIsValid device dtype
---      , T.SumDTypeIsValid device dtype
---      , T.SumDType dtype ~ dtype
---      , shape ~ T.Broadcast '[o] shape -- This is implied by T.Last shape ~ o
---      )
---   => ParaLens' (t '[o]) (t shape) (t shape)
--- addLens' = lens fwd rev
---   where
---     fwd :: (t '[o], t shape) -> t shape
---     fwd (b,x) = T.add b x
---     rev :: (t '[o], t shape) -> t shape -> (t '[o], t shape)
---     rev _ x' = (foo, x')
---       where
---         foo = sumSamples' x'
---         o' = fromIntegral . natVal $ Proxy @o
---         b = T.numel x' `div` o'
-
--- addLens''
---   :: forall b o device dtype t
---    . ( t ~ Tensor device dtype -- for neatness
---      , T.All KnownNat '[b, o]
---      , T.BasicArithmeticDTypeIsValid device dtype
---      , T.SumDTypeIsValid device dtype
---      , T.KnownDevice device -- why?
---      , T.SumDType dtype ~ dtype
---      , '[b, o] ~ T.Broadcast '[o] '[b, o] -- This is already implied but ah well
---      )
---   => ParaLens' (t '[o]) (t '[b, o]) (t '[b, o])
--- addLens'' = lens fwd rev
---   where
---     fwd :: (t '[o], t '[b, o]) -> t '[b, o]
---     fwd (b,x) = T.add b x
---     rev :: (t '[o], t '[b, o]) -> t '[b, o] -> (t '[o], t '[b, o])
---     rev _ x' = (T.sumDim @0 x' / b', x')
---       where
---         b' = fromIntegral . natVal $ Proxy @b
-
 type CanAddLens device dtype =
   ( 
     T.BasicArithmeticDTypeIsValid device dtype,
@@ -199,37 +102,38 @@ type CanAddLens device dtype =
     T.SumDType dtype ~ dtype
   )
 
--- Note: Can be better with fully known shapes
 addLens ::
+  forall shape b device dtype t.
+  ( t ~ Tensor device dtype,
+    CanAddLens device dtype,
+    b:shape ~ T.Broadcast shape (b:shape) -- trivial tbh
+  ) =>
+  ParaLens' (t shape) (t (b:shape)) (t (b:shape))
+addLens = lens fwd rev
+  where
+    fwd :: (t shape, t (b:shape)) -> t (b:shape)
+    fwd = uncurry T.add
+    rev :: (t shape, t (b:shape)) -> t (b:shape) -> (t shape, t (b:shape))
+    rev _ = T.sumDim @0 &&& id
+{-# INLINE addLens #-}
+
+-- Note: Can be better with fully known shapes
+addLens' ::
   forall shape shape' shape'' device dtype t.
   ( t ~ Tensor device dtype,
     CanAddLens device dtype,
-    T.KnownDevice device,
     T.KnownShape shape,
-    KnownNat (T.Numel shape), -- implied by KnownShape tbh...
     shape'' ~ T.Broadcast shape shape',
     shape'' ~ shape',
     shape `T.IsSuffixOf` shape'
   ) =>
   ParaLens' (t shape) (t shape') (t shape'')
-addLens = lens fwd rev
+addLens' = lens fwd rev
   where
     fwd :: (t shape, t shape') -> t shape''
     fwd (b, x) = T.add b x
     rev :: (t shape, t shape') -> t shape'' -> (t shape, t shape')
-    -- Here, we need to sum dims to compress shape'' into shape
-    -- Type family that takes number of dims to chop off?
-    -- Also take the product of the first dims
-    -- But this may not be a knownNat for batch dim...
-    -- Can I use a shape ~ s:ss where T.All KnownNat ss?
-    -- i.e. we get one dim unknown to use and the rest
-    -- But then actually we might as well say we know only the suffixed part
-    -- (which we aready do) and then have to take the runtime size of the extra
-    -- Since we have variable batch sizes (as less than 32 etc - but do we care?)
-    -- Could mandate known size, or just write a version for known / unknown
-    -- If we do that, use OverlappingInstances to specialise:
-    -- general shape -> runtime size, knownNat instance -> reify!
-    rev _ x' = (x''' / batchSize, x')
+    rev _ x' = (x''', x')
       where
         -- Safe as shape is suffix of shape' so multiples will work
         x'' :: t (w : shape) -- There exists a w, doesn't really matter what it is
@@ -237,34 +141,11 @@ addLens = lens fwd rev
 
         x''' :: t shape
         x''' = T.sumDim @0 x''
-
-        -- T.numel b is runtime (for rev (b,_) x'), we can use this for compile-time!
-        numelB = fromIntegral $ natVal $ Proxy @(T.Numel shape)
-        batchSize = fromIntegral $ T.numel x' `div` numelB -- x' has partial shape runtime-specific
-
---                            m x y
--- addLens :: forall e f. (Sample f, ProdNum e) => ParaLens' (Vector e) (f e) (f e)
--- addLens = lens (uncurry addBias) rev
---   where
---     rev :: (Vector e, f e) -> f e -> (Vector e, f e)
---     rev = const $ sumSamples &&& id
-
--- expit :: Floating a => a -> a
--- expit = recip . (1 +) . exp . negate
-
--- sigmoid :: forall e f. (Sample f, Floating e, Numeric e, Num (f e)) => Lens' (f e) (f e)
--- sigmoid = lens (cmap expit) rev
---   where
---     fwd :: f e -> f e
---     fwd = cmap expit
-
---     rev :: f e -> f e -> f e
---     rev = (*) . ap (*) (1 -) . fwd
+{-# INLINABLE addLens' #-}
 
 sigmoid ::
   forall shape device dtype t.
   ( t ~ Tensor device dtype,
-    shape ~ T.Broadcast shape shape,
     T.StandardFloatingPointDTypeValidation device dtype,
     T.KnownDevice device
   ) =>
@@ -273,9 +154,7 @@ sigmoid = lens T.sigmoid rev
   where
     rev :: t shape -> t shape -> t shape
     rev = (*) . ap (*) (1 -) . T.sigmoid
-
--- relu :: (Sample f, Floating e, Numeric e, Ord e, Num (f e)) => Lens' (f e) (f e)
--- relu = lens (cmap $ max 0) ((*) . step)
+{-# INLINE sigmoid #-}
 
 relu ::
   forall shape device dtype t.
@@ -291,6 +170,7 @@ relu = lens T.relu rev
   where
     rev :: t shape -> t shape -> t shape
     rev = (*) . heaviside
+{-# INLINE relu #-}
 
 heaviside ::
   forall shape device dtype t.
@@ -309,21 +189,16 @@ heaviside = T.toDType @dtype @T.Bool . liftA2 ($) T.gt T.zerosLike
 -- MATMUL & OPTIMISED  --
 -------------------------
 
--- matMulLensCore :: (Sample f, Num (f R)) => ParaLens' MMP (f R) (f R)
--- matMulLensCore = linear .#. addLens
-
 type CanMMLens device dtype = ( T.MatMulDTypeIsValid device dtype, CanAddLens device dtype)
 
 matMulLensCore ::
   forall t batch i o device dtype.
   ( t ~ Tensor device dtype,
-    T.All KnownNat [i, o, batch],
-    CanMMLens device dtype,
-    T.IsSuffixOf '[o] '[batch, o], -- I'd think this was implied but ah well
-    T.KnownDevice device
+    CanMMLens device dtype
   ) =>
   ParaLens' (t '[o, i], t '[o]) (t '[batch, i]) (t '[batch, o])
 matMulLensCore = linear .#. addLens
+{-# INLINE matMulLensCore #-}
 
 type MMP device dtype o i = (Tensor device dtype '[o, i], Tensor device dtype '[o])
 
@@ -331,9 +206,7 @@ matMulLens ::
   forall t mmp batch i o device dtype.
   ( t ~ Tensor device dtype,
     mmp ~ MMP device dtype o i,
-    T.All KnownNat [i, o, batch],
     CanMMLens device dtype,
-    T.IsSuffixOf '[o] '[batch, o], -- I'd think this was implied but ah well
     T.KnownDevice device
   ) =>
   ParaLens' mmp (t '[batch, i]) (t '[batch, o])
@@ -341,6 +214,7 @@ matMulLens = repara r matMulLensCore
   where
     r :: Lens' mmp mmp
     r = alongside gradUpdate gradUpdate
+{-# INLINE matMulLens #-}
 
 -- withMomentum :: (Sample f, Num (f R)) => Momentum R -> ParaLens' (MMP, MMP) (f R) (f R)
 -- withMomentum mom = repara r matMulLensCore
