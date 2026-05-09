@@ -252,7 +252,9 @@ matMulLensMom,
     a ->
     ParaLens' (Two (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
 matMulLensMom gamma = withMomentum $ momentum gamma
+{-# INLINE matMulLensMom #-}
 matMulLensNest gamma = withMomentum $ nesterov gamma
+{-# INLINE matMulLensNest #-}
 
 matMulLensAda ::
   ( T.Scalar a,
@@ -265,6 +267,7 @@ matMulLensAda ::
   a ->
   ParaLens' (Two (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
 matMulLensAda gamma = withMomentum $ adaGrad gamma
+{-# INLINE matMulLensAda #-}
 
 matMulLensAdam ::
     forall a dv dt o i b. ( T.Scalar a,
@@ -287,6 +290,7 @@ matMulLensAdam b1 b2 eps = repara r matMulLensCore
 
     r :: Lens' (Three (MMP dv dt o i)) (MMP dv dt o i)
     r = rot . q
+{-# INLINE matMulLensAdam #-}
 
 -- lazy type def, actually more general but won't use it elsewhere anyway
 rot :: Iso' ((a,d),(b,e),(c,f)) (((a,b),c),((d,e),f))
