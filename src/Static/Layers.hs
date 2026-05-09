@@ -13,16 +13,16 @@
 
 module Static.Layers where
 
+import Control.Arrow
 import Control.Lens
 import Control.Monad
 import Core
 import Data.Proxy
 import GHC.TypeNats
-import Optim
+import Static.Optim
 import qualified Torch as U
 import Torch.Typed (Init, Tensor (UnsafeMkTensor), toDynamic, type (++))
 import qualified Torch.Typed as T
-import Control.Arrow
 
 -------------------------
 -- CARTESIAN REVERSE DIFFERENTIAL CATEGORIES --
@@ -32,18 +32,17 @@ import Control.Arrow
 -- LAYERS --
 -------------------------
 
-transp :: Tensor device dtype shape -> Tensor device dtype (T.SetValue (T.SetValue shape 0 (T.GetValue shape 1)) 1 (T.GetValue shape 0))
+transp :: Tensor dv dt shape -> Tensor dv dt (T.SetValue (T.SetValue shape 0 (T.GetValue shape 1)) 1 (T.GetValue shape 0))
 transp = T.transpose @0 @1
 
 linear ::
-  forall batch i o device dtype.
-  (
-    T.MatMulDTypeIsValid device dtype
+  forall batch i o dv dt.
+  ( T.MatMulDTypeIsValid dv dt
   ) =>
   ParaLens'
-    (Tensor device dtype '[o, i])
-    (Tensor device dtype '[batch, i])
-    (Tensor device dtype '[batch, o])
+    (Tensor dv dt '[o, i])
+    (Tensor dv dt '[batch, i])
+    (Tensor dv dt '[batch, o])
 linear = lens fwd rev
   where
     fwd (w, x) = T.matmul x $ transp w
@@ -55,8 +54,8 @@ linear = lens fwd rev
 {-# INLINE linear #-}
 
 linear' ::
-  forall t i o shape device dtype.
-  ( t ~ Tensor device dtype,
+  forall t i o shape dv dt.
+  ( t ~ Tensor dv dt,
     T.IsSuffixOf '[i] shape,
     KnownNat i,
     KnownNat o
@@ -95,33 +94,32 @@ linear' = lens fwd rev
         dx :: t shape
         dx = UnsafeMkTensor $ U.matmul (toDynamic grad) (toDynamic w)
 
-type CanAddLens device dtype =
-  ( 
-    T.BasicArithmeticDTypeIsValid device dtype,
-    T.SumDTypeIsValid device dtype,
-    T.SumDType dtype ~ dtype
+type CanAddLens dv dt =
+  ( T.BasicArithmeticDTypeIsValid dv dt,
+    T.SumDTypeIsValid dv dt,
+    T.SumDType dt ~ dt
   )
 
 addLens ::
-  forall shape b device dtype t.
-  ( t ~ Tensor device dtype,
-    CanAddLens device dtype,
-    b:shape ~ T.Broadcast shape (b:shape) -- trivial tbh
+  forall shape b dv dt t.
+  ( t ~ Tensor dv dt,
+    CanAddLens dv dt,
+    b : shape ~ T.Broadcast shape (b : shape) -- trivial tbh
   ) =>
-  ParaLens' (t shape) (t (b:shape)) (t (b:shape))
+  ParaLens' (t shape) (t (b : shape)) (t (b : shape))
 addLens = lens fwd rev
   where
-    fwd :: (t shape, t (b:shape)) -> t (b:shape)
+    fwd :: (t shape, t (b : shape)) -> t (b : shape)
     fwd = uncurry T.add
-    rev :: (t shape, t (b:shape)) -> t (b:shape) -> (t shape, t (b:shape))
+    rev :: (t shape, t (b : shape)) -> t (b : shape) -> (t shape, t (b : shape))
     rev _ = T.sumDim @0 &&& id
 {-# INLINE addLens #-}
 
 -- Note: Can be better with fully known shapes
 addLens' ::
-  forall shape shape' shape'' device dtype t.
-  ( t ~ Tensor device dtype,
-    CanAddLens device dtype,
+  forall shape shape' shape'' dv dt t.
+  ( t ~ Tensor dv dt,
+    CanAddLens dv dt,
     T.KnownShape shape,
     shape'' ~ T.Broadcast shape shape',
     shape'' ~ shape',
@@ -141,13 +139,13 @@ addLens' = lens fwd rev
 
         x''' :: t shape
         x''' = T.sumDim @0 x''
-{-# INLINABLE addLens' #-}
+{-# INLINEABLE addLens' #-}
 
 sigmoid ::
-  forall shape device dtype t.
-  ( t ~ Tensor device dtype,
-    T.StandardFloatingPointDTypeValidation device dtype,
-    T.KnownDevice device
+  forall shape dv dt t.
+  ( t ~ Tensor dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.KnownDevice dv
   ) =>
   Lens' (t shape) (t shape)
 sigmoid = lens T.sigmoid rev
@@ -157,13 +155,13 @@ sigmoid = lens T.sigmoid rev
 {-# INLINE sigmoid #-}
 
 relu ::
-  forall shape device dtype t.
-  ( t ~ Tensor device dtype,
+  forall shape dv dt t.
+  ( t ~ Tensor dv dt,
     shape ~ T.Broadcast shape shape,
-    T.StandardFloatingPointDTypeValidation device dtype,
-    T.KnownDevice device,
-    T.ComparisonDTypeIsValid device dtype,
-    T.KnownDType dtype
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.KnownDevice dv,
+    T.ComparisonDTypeIsValid dv dt,
+    T.KnownDType dt
   ) =>
   Lens' (t shape) (t shape)
 relu = lens T.relu rev
@@ -173,41 +171,44 @@ relu = lens T.relu rev
 {-# INLINE relu #-}
 
 heaviside ::
-  forall shape device dtype t.
-  ( t ~ Tensor device dtype,
+  forall shape dv dt t.
+  ( t ~ Tensor dv dt,
     shape ~ T.Broadcast shape shape,
-    T.StandardFloatingPointDTypeValidation device dtype,
-    T.ComparisonDTypeIsValid device dtype,
-    T.KnownDType dtype
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.ComparisonDTypeIsValid dv dt,
+    T.KnownDType dt
   ) =>
   t shape ->
   t shape
 -- TODO: pretty sure there is better using geScalar...
-heaviside = T.toDType @dtype @T.Bool . liftA2 ($) T.gt T.zerosLike
+heaviside = T.toDType @dt @T.Bool . liftA2 ($) T.gt T.zerosLike
 
 -------------------------
 -- MATMUL & OPTIMISED  --
 -------------------------
 
-type CanMMLens device dtype = ( T.MatMulDTypeIsValid device dtype, CanAddLens device dtype)
+type CanMMLens dv dt = (T.MatMulDTypeIsValid dv dt, CanAddLens dv dt)
 
 matMulLensCore ::
-  forall t batch i o device dtype.
-  ( t ~ Tensor device dtype,
-    CanMMLens device dtype
+  forall t batch i o dv dt.
+  ( t ~ Tensor dv dt,
+    CanMMLens dv dt
   ) =>
   ParaLens' (t '[o, i], t '[o]) (t '[batch, i]) (t '[batch, o])
 matMulLensCore = linear .#. addLens
 {-# INLINE matMulLensCore #-}
 
-type MMP device dtype o i = (Tensor device dtype '[o, i], Tensor device dtype '[o])
+type MMP dv dt o i = (Tensor dv dt '[o, i], Tensor dv dt '[o])
+type Two x = (x, x)
+type Three x = (x, x, x)
+type TwoNOne x = (Two x, x)
 
 matMulLens ::
-  forall t mmp batch i o device dtype.
-  ( t ~ Tensor device dtype,
-    mmp ~ MMP device dtype o i,
-    CanMMLens device dtype,
-    T.KnownDevice device
+  forall t mmp batch i o dv dt.
+  ( t ~ Tensor dv dt,
+    mmp ~ MMP dv dt o i,
+    CanMMLens dv dt,
+    T.KnownDevice dv
   ) =>
   ParaLens' mmp (t '[batch, i]) (t '[batch, o])
 matMulLens = repara r matMulLensCore
@@ -216,48 +217,83 @@ matMulLens = repara r matMulLensCore
     r = alongside gradUpdate gradUpdate
 {-# INLINE matMulLens #-}
 
--- withMomentum :: (Sample f, Num (f R)) => Momentum R -> ParaLens' (MMP, MMP) (f R) (f R)
--- withMomentum mom = repara r matMulLensCore
---   where
---     q :: Lens' ((RM, RM), (RV, RV)) MMP
---     q = alongside mom mom
+withMomentum ::
+  forall t batch i o dv dt.
+  ( t ~ Tensor dv dt,
+    CanMMLens dv dt,
+    T.KnownDevice dv,
+    T.StandardFloatingPointDTypeValidation dv dt
+  ) =>
+  Momentum ->
+  ParaLens' (Two (MMP dv dt o i)) (t '[batch, i]) (t '[batch, o])
+withMomentum mom = repara r matMulLensCore
+  where
+    q :: Lens' (Two (Tensor dv dt '[o, i]), Two (Tensor dv dt '[o])) (MMP dv dt o i)
+    q = alongside mom mom
 
---     r :: Lens' (MMP, MMP) MMP
---     r = rotate' . q
+    r :: Lens' (Two (MMP dv dt o i)) (MMP dv dt o i)
+    r = rotate' . q
+{-# INLINE withMomentum #-}
 
--- rotate' :: Iso ((a,b),(c,d)) ((a',c'),(b',d')) ((a,c),(b,d)) ((a',b'),(c',d'))
--- rotate' = iso fwd rev
---   where
---     fwd ((a,b),(c,d)) = ((a,c),(b,d))
---     rev ((a,c),(b,d)) = ((a,b),(c,d))
+rotate' :: Iso ((a, b), (c, d)) ((a', c'), (b', d')) ((a, c), (b, d)) ((a', b'), (c', d'))
+rotate' = iso fwd rev
+  where
+    fwd ((a, b), (c, d)) = ((a, c), (b, d))
+    rev ((a, c), (b, d)) = ((a, b), (c, d))
 
--- matMulLensMom :: (Sample f, Num (f R)) => R -> ParaLens' (MMP, MMP) (f R) (f R)
--- matMulLensMom gamma = withMomentum $ momentum gamma
+matMulLensMom,
+  matMulLensNest ::
+    ( T.Scalar a,
+      Num a,
+      CanMMLens dv dt,
+      T.StandardFloatingPointDTypeValidation dv dt,
+      T.KnownDevice dv
+    ) =>
+    a ->
+    ParaLens' (Two (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
+matMulLensMom gamma = withMomentum $ momentum gamma
+matMulLensNest gamma = withMomentum $ nesterov gamma
 
--- matMulLensNest :: (Sample f, Num (f R)) => R -> ParaLens' (MMP, MMP) (f R) (f R)
--- matMulLensNest gamma = withMomentum $ nesterov gamma
+matMulLensAda ::
+  ( T.Scalar a,
+    Num a,
+    Fractional a,
+    CanMMLens dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.KnownDevice dv
+  ) =>
+  a ->
+  ParaLens' (Two (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
+matMulLensAda gamma = withMomentum $ adaGrad gamma
 
--- matMulLensAda :: (Sample f, Num (f R)) => R -> ParaLens' (MMP, MMP) (f R) (f R)
--- matMulLensAda gamma = withMomentum $ adaGrad gamma
+matMulLensAdam ::
+    forall a dv dt o i b. ( T.Scalar a,
+      Num a,
+      Fractional a,
+      CanMMLens dv dt,
+      T.StandardFloatingPointDTypeValidation dv dt,
+      T.KnownDevice dv
+    ) =>
+    a -> a -> a ->
+    ParaLens' (Three (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
+matMulLensAdam b1 b2 eps = repara r matMulLensCore
+  where
+    ad :: Momentum2
+    ad = adam b1 b2 eps
 
--- matMulLensAdam :: (Sample f, Num (f R)) => R -> R -> R -> ParaLens' (MMP, MMP, MMP) (f R) (f R)
--- matMulLensAdam b1 b2 eps = repara r matMulLensCore
---   where
---     ad :: forall t . (Num (t R), Linear R t, Container t R, Floating (t R)) => Lens' ((t R, t R), t R) (t R)
---     ad = adam b1 b2 eps
+    -- q :: Lens' (((RM, RM), RM), ((RV, RV), RV)) MMP
+    q :: Lens' (TwoNOne (Tensor dv dt '[o, i]), TwoNOne (Tensor dv dt '[o])) (MMP dv dt o i)
+    q = alongside ad ad -- kinda neat that we still maintain the flexibility to spec to matrix or vector here!
 
---     q :: Lens' (((RM, RM), RM), ((RV, RV), RV)) MMP
---     q = alongside ad ad -- kinda neat that we still maintain the flexibility to spec to matrix or vector here!
+    r :: Lens' (Three (MMP dv dt o i)) (MMP dv dt o i)
+    r = rot . q
 
---     r :: Lens' (MMP, MMP, MMP) MMP
---     r = rot . q
-
---     -- lazy type def, actually more general but won't use it elsewhere anyway
---     rot :: Iso' ((a,d),(b,e),(c,f)) (((a,b),c),((d,e),f))
---     rot = iso fwd rev
---       where
---         fwd ((a,d),(b,e),(c,f)) = (((a,b),c),((d,e),f))
---         rev (((a,b),c),((d,e),f)) = ((a,d),(b,e),(c,f))
+-- lazy type def, actually more general but won't use it elsewhere anyway
+rot :: Iso' ((a,d),(b,e),(c,f)) (((a,b),c),((d,e),f))
+rot = iso fwd rev
+  where
+    fwd ((a,d),(b,e),(c,f)) = (((a,b),c),((d,e),f))
+    rev (((a,b),c),((d,e),f)) = ((a,d),(b,e),(c,f))
 
 -- -------------------------
 -- -- CONVOLUTION --

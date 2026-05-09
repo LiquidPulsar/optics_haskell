@@ -42,20 +42,20 @@ irisToVec =
 
 type NumIris = 150
 
-convert :: forall device dtype shape. (T.KnownDevice device, T.KnownDType dtype) => Tensor -> T.Tensor device dtype shape
+convert :: forall dv dt shape. (T.KnownDevice dv, T.KnownDType dt) => Tensor -> T.Tensor dv dt shape
 convert =
   T.UnsafeMkTensor
-    . toDevice (T.deviceVal @device)
-    . toType (T.dtypeVal @dtype)
+    . toDevice (T.deviceVal @dv)
+    . toType (T.dtypeVal @dt)
 {-# INLINE convert #-} -- already inlines but let's be safe
 
 irisToTensor ::
-  ( T.KnownDType dtype,
-    T.KnownDevice device
+  ( T.KnownDType dt,
+    T.KnownDevice dv
   ) =>
   [Iris] ->
-  ( T.Tensor device dtype '[NumIris, 4],
-    T.Tensor device dtype '[NumIris, 3]
+  ( T.Tensor dv dt '[NumIris, 4],
+    T.Tensor dv dt '[NumIris, 3]
   )
 irisToTensor = feats &&& classes
   where
@@ -63,48 +63,48 @@ irisToTensor = feats &&& classes
     classes = convert . oneHot 3 . asTensor . map (fromEnum . irisClass)
 
 sliceBatch ::
-  forall batchSize features n device dtype.
+  forall batchSize features n dv dt.
   ( KnownNat batchSize,
     KnownNat features
   ) =>
   Int -> -- runtime offset
-  T.Tensor device dtype '[n, features] ->
-  T.Tensor device dtype '[batchSize, features]
+  T.Tensor dv dt '[n, features] ->
+  T.Tensor dv dt '[batchSize, features]
 sliceBatch offset t = T.UnsafeMkTensor $ narrow_tlll (T.toDynamic t) 0 offset b
   where
     b = T.natValI @batchSize
 
-batches :: forall n batch device dtype features. (T.All KnownNat [batch, features, n]) => T.Tensor device dtype '[n, features] -> [T.Tensor device dtype '[batch, features]]
+batches :: forall n batch dv dt features. (T.All KnownNat [batch, features, n]) => T.Tensor dv dt '[n, features] -> [T.Tensor dv dt '[batch, features]]
 batches dataset = [sliceBatch @batch (i * b) dataset | i <- [0 .. (n `div` b) - 1]]
   where
     b = T.natValI @batch
     n = T.natValI @n
 
-irisTargets :: (T.KnownDType dtype, T.KnownDevice device) => [(T.Tensor device dtype '[BatchSize, 4], T.Tensor device dtype '[BatchSize, 3])]
+irisTargets :: (T.KnownDType dt, T.KnownDevice dv) => [(T.Tensor dv dt '[BatchSize, 4], T.Tensor dv dt '[BatchSize, 3])]
 irisTargets = zip (batches inps) (batches tgts)
   where
     (inps, tgts) = irisToTensor iris
 
-type IParams device dtype = MMP device dtype 3 4
+type IParams dv dt = MMP dv dt 3 4
 
-type SaneDT device dtype =
-  ( T.KnownDType dtype,
-    T.StandardFloatingPointDTypeValidation device dtype,
-    CanMMLens device dtype
+type SaneDT dv dt =
+  ( T.KnownDType dt,
+    T.StandardFloatingPointDTypeValidation dv dt,
+    CanMMLens dv dt
   )
 
 irisModel ::
-  ( SaneDT device dtype,
-    T.KnownDevice device
+  ( SaneDT dv dt,
+    T.KnownDevice dv
   ) =>
-  ParaLens' (Inp (T.Tensor device dtype '[b, 4]), IParams device dtype) () (Out (T.Tensor device dtype '[b, 3]))
+  ParaLens' (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) () (Out (T.Tensor dv dt '[b, 3]))
 irisModel = argToPara .#. matMulLens . sigmoid
 {-# INLINE irisModel #-}
 
-test :: (SaneDT device dtype, T.KnownDevice device) => (Inp (T.Tensor device dtype '[b, 4]), IParams device dtype) -> Out (T.Tensor device dtype '[b, 3])
+test :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) -> Out (T.Tensor dv dt '[b, 3])
 test = runFullModel irisModel
 
-handRolledTest :: (SaneDT device dtype, T.KnownDevice device) => (Inp (T.Tensor device dtype '[b, 4]), IParams device dtype) -> Out (T.Tensor device dtype '[b, 3])
+handRolledTest :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) -> Out (T.Tensor dv dt '[b, 3])
 handRolledTest (i, (m, b)) =
   let res = T.matmul i (transp m)
       res' = T.add res b
@@ -112,22 +112,22 @@ handRolledTest (i, (m, b)) =
    in res''
 
 irisModelLoss ::
-  ( SaneDT device dtype,
-    T.KnownDevice device
+  ( SaneDT dv dt,
+    T.KnownDevice dv
   ) =>
-  ParaLens' ((Inp (T.Tensor device dtype '[b, 4]), IParams device dtype), Tgt (T.Tensor device dtype '[b, 3])) () (Out (T.Tensor device dtype '[]))
+  ParaLens' ((Inp (T.Tensor dv dt '[b, 4]), IParams dv dt), Tgt (T.Tensor dv dt '[b, 3])) () (Out (T.Tensor dv dt '[]))
 irisModelLoss = irisModel .#. lossSmooth
 {-# INLINE irisModelLoss #-}
 
 irisModel' ::
-  ( SaneDT device dtype,
-    T.KnownDevice device
+  ( SaneDT dv dt,
+    T.KnownDevice dv
   ) =>
-  ParaLens' ((Inp (T.Tensor device dtype '[b, 4]), IParams device dtype), Tgt (T.Tensor device dtype '[b, 3])) () ()
+  ParaLens' ((Inp (T.Tensor dv dt '[b, 4]), IParams dv dt), Tgt (T.Tensor dv dt '[b, 3])) () ()
 irisModel' = irisModel .#. lossSmooth . lrSmooth 0.01
 {-# INLINE irisModel' #-}
 
-irisEpoch :: (SaneDT device dtype, T.KnownDevice device) => IParams device dtype -> IParams device dtype
+irisEpoch :: (SaneDT dv dt, T.KnownDevice dv) => IParams dv dt -> IParams dv dt
 irisEpoch mmp = trainMany irisModel' mmp irisTargets
 
 -- initParams :: Int -> Int -> IO (Matrix Double, Vector Double)
@@ -137,33 +137,33 @@ irisEpoch mmp = trainMany irisModel' mmp irisTargets
 --   let f x = scale 0.01 (x - 0.5)
 --   return (f w, f b)
 
-irisInitParams :: (T.KnownDType dtype, T.RandDTypeIsValid device dtype, T.KnownDevice device) => IO (IParams device dtype)
+irisInitParams :: (T.KnownDType dt, T.RandDTypeIsValid dv dt, T.KnownDevice dv) => IO (IParams dv dt)
 irisInitParams = liftA2 (,) T.randn T.randn
 
-irisBestParams :: (T.KnownDType dtype, T.RandDTypeIsValid device dtype, SaneDT device dtype, T.KnownDevice device) => IO [IParams device dtype]
+irisBestParams :: (T.KnownDType dt, T.RandDTypeIsValid dv dt, SaneDT dv dt, T.KnownDevice dv) => IO [IParams dv dt]
 irisBestParams = iterate irisEpoch <$> irisInitParams
 
-irisGetEpoch :: (T.KnownDType dtype, T.RandDTypeIsValid device dtype, SaneDT device dtype, T.KnownDevice device) => Int -> IO (IParams device dtype)
+irisGetEpoch :: (T.KnownDType dt, T.RandDTypeIsValid dv dt, SaneDT dv dt, T.KnownDevice dv) => Int -> IO (IParams dv dt)
 irisGetEpoch i = irisBestParams <&> (!! i)
 
-irisError :: (SaneDT device dtype, T.KnownDevice device) => IParams device dtype -> T.Tensor device dtype '[]
+irisError :: (SaneDT dv dt, T.KnownDevice dv) => IParams dv dt -> T.Tensor dv dt '[]
 irisError = sum . flip map irisTargets . runOne irisModelLoss
 
-irisPredict :: (KnownNat b, SaneDT device dtype, T.KnownDevice device) => IParams device dtype -> Inp (T.Tensor device dtype '[b, 4]) -> Tgt (T.Tensor device dtype '[b, 3])
+irisPredict :: (KnownNat b, SaneDT dv dt, T.KnownDevice dv) => IParams dv dt -> Inp (T.Tensor dv dt '[b, 4]) -> Tgt (T.Tensor dv dt '[b, 3])
 irisPredict mmp = runFullModel irisModel . (,mmp)
 
-labelToIrisClass :: (T.StandardDTypeValidation device dtype) => T.Tensor device dtype '[b, 3] -> [IrisClass]
+labelToIrisClass :: (T.StandardDTypeValidation dv dt) => T.Tensor dv dt '[b, 3] -> [IrisClass]
 labelToIrisClass = map toEnum . asValue . T.toDynamic . T.argmax @1 @T.DropDim
 
-irisPredict' :: (KnownNat b, SaneDT device dtype, T.StandardDTypeValidation device dtype, T.KnownDevice device) => IParams device dtype -> Inp (T.Tensor device dtype '[b, 4]) -> [IrisClass]
+irisPredict' :: (KnownNat b, SaneDT dv dt, T.StandardDTypeValidation dv dt, T.KnownDevice dv) => IParams dv dt -> Inp (T.Tensor dv dt '[b, 4]) -> [IrisClass]
 irisPredict' mmp = labelToIrisClass . irisPredict mmp
 
 irisAccuracy ::
-  ( SaneDT device dtype,
-    T.StandardDTypeValidation device dtype,
-    T.KnownDevice device
+  ( SaneDT dv dt,
+    T.StandardDTypeValidation dv dt,
+    T.KnownDevice dv
   ) =>
-  IParams device dtype ->
+  IParams dv dt ->
   Double
 irisAccuracy mmp = fromIntegral correct / fromIntegral total
   where

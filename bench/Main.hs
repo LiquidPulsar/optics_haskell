@@ -73,6 +73,6 @@ main = do
 -- NFData instances
 --------------------------------------------------------------------------------
 
-instance NFData (T.Tensor device dtype shape) where
-  rnf :: T.Tensor device dtype shape -> ()
+instance NFData (T.Tensor dv dt shape) where
+  rnf :: T.Tensor dv dt shape -> ()
   rnf = rnf . T.toDynamic

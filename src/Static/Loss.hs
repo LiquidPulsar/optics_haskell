@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Static.Loss where
 
@@ -12,6 +13,7 @@ import Control.Arrow
 import Control.Lens
 import Core
 import qualified Torch.Typed as T
+import GHC.TypeLits
 
 -------------------------
 -- LOSS MAP --
@@ -30,23 +32,21 @@ type TrivialFacts shape = ( -- See below impl of lossSmooth
   )
 
 lossSmooth ::
-  forall t shape r rv device dtype.
-  ( t ~ T.Tensor device dtype,
-    rv ~ t shape,
-    r ~ t '[],
+  forall t shape dv dt.
+  ( t ~ T.Tensor dv dt,
     TrivialFacts shape,
-    T.BasicArithmeticDTypeIsValid device dtype,
-    T.StandardFloatingPointDTypeValidation device dtype
+    T.BasicArithmeticDTypeIsValid dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt
   ) =>
-  ParaLens rv rv rv rv r r -- r stays on device, extract with T.asValue
+  ParaLens' (t shape) (t shape) (t '[]) -- r stays on dv, extract with T.asValue
 lossSmooth = lens fwd (flip rev')
   where
     --      tgt vec  guess vec   err
-    fwd :: (rv, rv) -> r -- (bt, bp)
+    fwd :: (t shape, t shape) -> t '[] -- (bt, bp)
     fwd = uncurry $ T.mseLoss @T.ReduceMean
 
     --      alpha tgt vec  guess vec    d(tgt)   d(pred)
-    rev' :: r -> (rv, rv) -> (rv, rv)
+    rev' :: t '[] -> (t shape, t shape) -> (t shape, t shape)
     -- This isn't what they said in the paper (swapped id and negate) but I think they're wrong
     rev' alpha = (id &&& T.neg) . T.mul alpha . uncurry T.sub
     -- rev' alpha (tgt, guess) = (d, T.neg d)
@@ -61,35 +61,45 @@ lossSmooth = lens fwd (flip rev')
 --     rev :: (ZVector, ZVector) -> ZVector -> (ZVector, ZVector)
 --     rev = const $ join (,)
 
--- softMax :: RV -> RV
--- -- softMax r = cmap (divSum r') r' where r' = cmap exp r
--- softMax = (divSum >>= cmap) . cmap exp
---   where
---     divSum :: RV -> R -> R
---     divSum = flip (/) . VS.sum
+softMaxCELoss ::
+  forall t x c dv dt.
+  ( t ~ T.Tensor dv dt,
+    T.All KnownNat '[x, c],
+    T.AllDimsPositive '[x],
+    T.BasicArithmeticDTypeIsValid dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.SumDType dt ~ dt, 
+    T.KnownDType dt, 
+    T.KnownDevice dv, 
+    T.SumDTypeIsValid dv dt, 
+    T.MeanDTypeValidation dv dt
+  ) =>
+  ParaLens' (t '[x, c]) (t '[x, c]) (t '[])
+softMaxCELoss = lens fwd rev
+  where
+    fwd :: (t '[x, c], t '[x, c]) -> t '[]
+    fwd (bt, bp) = negate . T.meanAll . T.sumDim @1 $ bt * T.logSoftmax @1 bp
 
--- splitScale :: (Linear t a, Linear t b) => (a t, b t) -> t -> (a t, b t)
--- splitScale = flip $ liftA2 (***) scale scale
+    rev :: (t '[x, c], t '[x, c]) -> t '[] -> (t '[x, c], t '[x, c])
+    rev (bt, bp) d = (T.mul d $ negate $ T.log q, T.mul d $ q - bt)
+      where
+        q = T.softmax @1 bp   -- '[x,c], sums to 1 over class dim
 
--- softMaxCELoss :: ParaLens' RV RV R
--- softMaxCELoss = lens fwd rev
---   where
---     fwd :: (RV, RV) -> R -- (bt, bp)
---     fwd (bt, bp) = dot bt $ VS.zipWith f bp $ softMax bp
---       where
---         f :: R -> R -> R
---         f bpi = (bpi -) . log
+deepDreamLoss ::
+  forall t shape dv dt.
+  ( t ~ T.Tensor dv dt,
+    T.KnownShape shape,
+    T.BasicArithmeticDTypeIsValid dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt, 
+    T.SumDTypeIsValid dv dt,
+    T.SumDType dt ~ dt,
+    T.Reverse shape ~ shape
+  ) =>
+  ParaLens' (t shape) (t shape) (t '[])
+deepDreamLoss = lens fwd rev
+  where
+    fwd :: (t shape, t shape) -> t '[]
+    fwd (bt, bp) = T.sumAll $ T.mul bt bp
 
---     rev :: (RV, RV) -> R -> (RV, RV)
---     rev (bt, bp) = splitScale (-log q, q - bt)
---       where
---         q = softMax bp
-
--- deepDreamLoss :: ParaLens' RV RV R
--- deepDreamLoss = lens fwd rev
---   where
---     fwd :: (RV, RV) -> R -- (bt, bp)
---     fwd = uncurry dot
-
---     rev :: (RV, RV) -> R -> (RV, RV)
---     rev = splitScale . swap
+    rev :: (t shape, t shape) -> t '[] -> (t shape, t shape)
+    rev (bt, bp) g = (T.mul bp g, T.mul bt g)
