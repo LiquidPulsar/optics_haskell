@@ -151,8 +151,11 @@ irisError = sum . flip map irisTargets . runOne irisModelLoss
 irisPredict :: (KnownNat b, SaneDT dv dt, T.KnownDevice dv) => IParams dv dt -> Inp (T.Tensor dv dt '[b, 4]) -> Tgt (T.Tensor dv dt '[b, 3])
 irisPredict mmp = runFullModel irisModel . (,mmp)
 
+labelToIndex :: (T.StandardDTypeValidation dv dt) => T.Tensor dv dt '[b, 3] -> [Int]
+labelToIndex = asValue . T.toDynamic . T.argmax @1 @T.DropDim
+
 labelToIrisClass :: (T.StandardDTypeValidation dv dt) => T.Tensor dv dt '[b, 3] -> [IrisClass]
-labelToIrisClass = map toEnum . asValue . T.toDynamic . T.argmax @1 @T.DropDim
+labelToIrisClass = map toEnum . labelToIndex
 
 irisPredict' :: (KnownNat b, SaneDT dv dt, T.StandardDTypeValidation dv dt, T.KnownDevice dv) => IParams dv dt -> Inp (T.Tensor dv dt '[b, 4]) -> [IrisClass]
 irisPredict' mmp = labelToIrisClass . irisPredict mmp
@@ -168,8 +171,8 @@ irisAccuracy mmp = fromIntegral correct / fromIntegral total
   where
     -- run predictions and get ground truth labels for each batch
     batched = flip map irisTargets $ \(inp, tgt) ->
-      let predicted = labelToIrisClass (irisPredict mmp inp)
-          actual = labelToIrisClass tgt -- argmax of one-hot targets
+      let predicted = labelToIndex (irisPredict mmp inp)
+          actual = labelToIndex tgt -- argmax of one-hot targets
        in zipWith (==) predicted actual
 
     results = concat batched
