@@ -23,6 +23,7 @@ import Static.Optim
 import qualified Torch as U
 import Torch.Typed (Init, Tensor (UnsafeMkTensor), toDynamic, type (++))
 import qualified Torch.Typed as T
+import Types hiding (MMP)
 
 -------------------------
 -- CARTESIAN REVERSE DIFFERENTIAL CATEGORIES --
@@ -199,9 +200,6 @@ matMulLensCore = linear .#. addLens
 {-# INLINE matMulLensCore #-}
 
 type MMP dv dt o i = (Tensor dv dt '[o, i], Tensor dv dt '[o])
-type Two x = (x, x)
-type Three x = (x, x, x)
-type TwoNOne x = (Two x, x)
 
 matMulLens ::
   forall t mmp batch i o dv dt.

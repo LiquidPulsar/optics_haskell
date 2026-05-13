@@ -18,7 +18,8 @@ import Data.Maybe
 import GHC.TypeLits
 import IrisData
 import Models (runFullModel, runOne, trainMany)
-import Static.Layers (CanMMLens, MMP, matMulLens, sigmoid, transp)
+import Stack
+import Static.Layers (CanMMLens, MMP, matMulLens, sigmoid)
 import Static.Loss
 import Static.Optim
 import Torch (Tensor, TensorLike (asTensor), asValue, oneHot, toDevice, toType)
@@ -84,7 +85,12 @@ irisTargets = zip (batches inps) (batches tgts)
   where
     (inps, tgts) = irisToTensor iris
 
-type IParams dv dt = MMP dv dt 3 4
+type IParams dv dt = (StackedN N (MMP dv dt 4 4), MMP dv dt 3 4)
+type N = 1
+
+nMuls :: (SaneDT dv dt, T.KnownDevice dv) => ParaLens' (StackedN N (MMP dv dt n n)) (T.Tensor dv dt '[b, n]) (T.Tensor dv dt '[b, n])
+nMuls = stackN @N (matMulLens . sigmoid)
+{-# INLINE nMuls #-}
 
 type SaneDT dv dt =
   ( T.KnownDType dt,
@@ -97,18 +103,18 @@ irisModel ::
     T.KnownDevice dv
   ) =>
   ParaLens' (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) () (Out (T.Tensor dv dt '[b, 3]))
-irisModel = argToPara .#. matMulLens . sigmoid
+irisModel = argToPara .#. nMuls .#. matMulLens . sigmoid
 {-# INLINE irisModel #-}
 
 test :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) -> Out (T.Tensor dv dt '[b, 3])
 test = runFullModel irisModel
 
-handRolledTest :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) -> Out (T.Tensor dv dt '[b, 3])
-handRolledTest (i, (m, b)) =
-  let res = T.matmul i (transp m)
-      res' = T.add res b
-      res'' = T.sigmoid res'
-   in res''
+-- handRolledTest :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt '[b, 4]), IParams dv dt) -> Out (T.Tensor dv dt '[b, 3])
+-- handRolledTest (i, (m, b)) =
+--   let res = T.matmul i (transp m)
+--       res' = T.add res b
+--       res'' = T.sigmoid res'
+--    in res''
 
 irisModelLoss ::
   ( SaneDT dv dt,
@@ -137,7 +143,7 @@ irisEpoch mmp = trainMany irisModel' mmp irisTargets
 --   return (f w, f b)
 
 irisInitParams :: (T.KnownDType dt, T.RandDTypeIsValid dv dt, T.KnownDevice dv) => IO (IParams dv dt)
-irisInitParams = liftA2 (,) T.randn T.randn
+irisInitParams = randInit
 
 irisBestParams :: (T.KnownDType dt, T.RandDTypeIsValid dv dt, SaneDT dv dt, T.KnownDevice dv) => IO [IParams dv dt]
 irisBestParams = iterate irisEpoch <$> irisInitParams

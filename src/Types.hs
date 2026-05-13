@@ -11,3 +11,7 @@ type MMP' e = (Matrix e, Vector e)
 type Inp a = a
 type Out a = a
 type Tgt a = a
+
+type Two x = (x, x)
+type Three x = (x, x, x)
+type TwoNOne x = (Two x, x)

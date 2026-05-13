@@ -6,7 +6,7 @@ module Core where
 
 import Control.Lens
 import Control.Arrow
-import GHC.Exts
+import GHC.Exts (inline)
 
 -- If C is a strict symmetric monoidal category (with monoidal product ⊗ and monoidal unit 𝐼) then we define a category Para(C) with
 
@@ -122,3 +122,17 @@ liftUpdate :: Lens' p p -> Lens' [p] [p]
 liftUpdate ul = lens (map $ view ul) $ flip (zipWith (set ul))
 -- liftUpdate ul = lens (map $ view ul) (\ps gs -> zipWith (set ul) gs ps)
 {-# INLINE liftUpdate #-}
+
+-- rep :: forall n p a. (KnownNat n, 1 <= n) => ParaLens' p a a -> ParaLens' (Stacked n p) a a -> ParaLens' (Stacked (n+1) p) a a
+-- rep l r = case stackedSucc @n @p of Refl -> l .#. r
+
+-- x :: ParaLens' ((), ((), ())) a a
+-- x = toPara id .#. (toPara id .#. toPara id)
+
+-- stack :: forall n p a. KnownNat n => ParaLens' p a a -> ParaLens' (Stacked n p) a a
+-- stack l = case natVal (Proxy @n) of
+--     1 -> unsafeCoerce l                         -- Stacked 1 p ~ p
+--     _ -> rep @(n-1) l (stack @(n-1) l) -- case someNatVal (k - 1) of
+--         -- Just (SomeNat (_ :: Proxy m)) ->
+--         --     unsafeCoerce (rep l (stack @(n-1) l))   -- Stacked (m+1) p ~ Stacked n p
+--         -- _ -> error "oops"
