@@ -20,10 +20,11 @@ import Torch hiding (step)
 
 data IrisModelSpec = IrisModelSpec
   { inputFeatures :: Int,
+    hiddenFeatures :: Int,
     outputFeatures :: Int
   }
 
-newtype IrisModel = IrisModel { linearLayer :: Linear }
+data IrisModel = IrisModel { linearLayer1 :: Linear, linearLayer2 :: Linear }
   deriving (Generic, Show, NFData)
 
 instance NFData Parameter
@@ -36,7 +37,7 @@ instance Parameterized IrisModel
 
 instance Randomizable IrisModelSpec IrisModel where
   sample IrisModelSpec {..} =
-    IrisModel <$> sample (LinearSpec inputFeatures outputFeatures)
+    IrisModel <$> sample (LinearSpec inputFeatures hiddenFeatures) <*> sample (LinearSpec hiddenFeatures outputFeatures)
 
 --------------------------------------------------------------------------------
 -- MODEL
@@ -47,7 +48,7 @@ instance Randomizable IrisModelSpec IrisModel where
 -- matMulLens . sigmoid
 --
 irisModel :: IrisModel -> Tensor -> Tensor
-irisModel IrisModel {..} = sigmoid . linear linearLayer
+irisModel IrisModel {..} = sigmoid . linear linearLayer2 . sigmoid . linear linearLayer1
 
 --------------------------------------------------------------------------------
 -- LOSS
@@ -58,7 +59,8 @@ irisModel IrisModel {..} = sigmoid . linear linearLayer
 -- irisModel .#. lossSmooth
 --
 irisModelLoss :: IrisModel -> Tensor -> Tensor -> Tensor
-irisModelLoss model input target = binaryCrossEntropyLoss' target $ irisModel model input
+-- irisModelLoss model input target = binaryCrossEntropyLoss' target $ irisModel model input
+irisModelLoss model input target = mseLoss target $ irisModel model input
 
 --------------------------------------------------------------------------------
 -- TRAIN STEP
@@ -68,7 +70,7 @@ irisModelLoss model input target = binaryCrossEntropyLoss' target $ irisModel mo
 --
 -- irisModel .#. lossSmooth . lrSmooth 0.01
 --
-irisTrainStep :: (Optimizer o) => IrisModel -> o -> Tensor -> Tensor -> IO IrisModel
+irisTrainStep :: Optimizer o => IrisModel -> o -> Tensor -> Tensor -> IO IrisModel
 irisTrainStep model optimizer input target = fst <$> runStep model optimizer loss 1e-2
   where loss = irisModelLoss model input target
 
@@ -80,7 +82,7 @@ irisTrainStep model optimizer input target = fst <$> runStep model optimizer los
 --
 -- trainMany irisModel' params irisTargets
 --
-irisEpoch :: (Optimizer o) => IrisModel -> o -> [(Tensor, Tensor)] -> IO IrisModel
+irisEpoch :: Optimizer o => IrisModel -> o -> [(Tensor, Tensor)] -> IO IrisModel
 irisEpoch initModel optimizer = foldM step initModel
   where step model = uncurry $ irisTrainStep model optimizer
 
@@ -93,7 +95,7 @@ irisEpoch initModel optimizer = foldM step initModel
 -- iterate irisEpoch <$> irisInitParams
 --
 irisTrain ::
-  (Optimizer o) =>
+  Optimizer o =>
   Int ->
   IrisModel ->
   o ->
@@ -169,4 +171,4 @@ irisAccuracy model dataset = fromIntegral correct / fromIntegral total
 --------------------------------------------------------------------------------
 
 irisInitModel :: IO IrisModel
-irisInitModel = sample $ IrisModelSpec 4 3
+irisInitModel = sample $ IrisModelSpec 4 4 3

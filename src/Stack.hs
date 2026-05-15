@@ -8,6 +8,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module Stack where
 import Core
@@ -41,7 +43,9 @@ type family ToPeano (n :: Nat) :: PeanoNat where
 -- Public API using numeric literals
 type StackedN (n :: Nat) m = Stacked (ToPeano n) m
 
-stackN :: forall n p a. StackN (ToPeano n) => ParaLens' p a a -> ParaLens' (StackedN n p) a a
+type CanStack n = StackN (ToPeano n)
+
+stackN :: forall n p a. CanStack n => ParaLens' p a a -> ParaLens' (StackedN n p) a a
 stackN = stack @(ToPeano n)
 
 -- x = stackN @5
@@ -54,3 +58,5 @@ instance (T.KnownDType dt, T.RandDTypeIsValid dv dt, T.KnownDevice dv, T.TensorO
 
 instance (RandInit l, RandInit r) => RandInit (l,r) where
     randInit = liftA2 (,) randInit randInit
+
+type RandStack n a = RandInit (Stacked (ToPeano n) a)

@@ -45,12 +45,10 @@ irisToLabel = irisClassToLabel . irisClass
 irisTargets :: [(RV, RV)]
 irisTargets = map (irisToVec &&& irisToLabel) iris
 
---
-
-type IParams = MMP
+type IParams = (MMP, MMP)
 
 irisModel :: ParaLens' (Inp RV, IParams) () (Out RV)
-irisModel = argToPara .#. matMulLens . sigmoid
+irisModel = argToPara .#. matMulLens . sigmoid .#. matMulLens . sigmoid
 
 irisModelLoss :: ParaLens' ((Inp RV, IParams), Tgt RV) () (Out R)
 irisModelLoss = irisModel .#. lossSmooth
@@ -69,7 +67,7 @@ initParams inputDim outputDim = do
   return (f w, f b)
 
 irisInitParams :: IO IParams
-irisInitParams = initParams 4 3
+irisInitParams = liftA2 (,) (initParams 4 4) (initParams 4 3)
 
 irisBestParams :: IO [IParams]
 irisBestParams = iterate irisEpoch <$> irisInitParams
