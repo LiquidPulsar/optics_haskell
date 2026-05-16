@@ -10,6 +10,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoStarIsType #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Static.Layers where
 
@@ -21,7 +23,8 @@ import Data.Proxy
 import GHC.TypeNats
 import Static.Optim
 import qualified Torch as U
-import Torch.Typed (Init, Tensor (UnsafeMkTensor), toDynamic, type (++))
+import qualified Torch.Functional.Internal as I
+import Torch.Typed (ConvSideCheck, Fst, Init, Snd, Tensor (UnsafeMkTensor), toDynamic, type (++))
 import qualified Torch.Typed as T
 import Types hiding (MMP)
 
@@ -268,15 +271,18 @@ matMulLensAda gamma = withMomentum $ adaGrad gamma
 {-# INLINE matMulLensAda #-}
 
 matMulLensAdam ::
-    forall a dv dt o i b. ( T.Scalar a,
-      Num a,
-      Fractional a,
-      CanMMLens dv dt,
-      T.StandardFloatingPointDTypeValidation dv dt,
-      T.KnownDevice dv
-    ) =>
-    a -> a -> a ->
-    ParaLens' (Three (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
+  forall a dv dt o i b.
+  ( T.Scalar a,
+    Num a,
+    Fractional a,
+    CanMMLens dv dt,
+    T.StandardFloatingPointDTypeValidation dv dt,
+    T.KnownDevice dv
+  ) =>
+  a ->
+  a ->
+  a ->
+  ParaLens' (Three (MMP dv dt o i)) (T.Tensor dv dt '[b, i]) (T.Tensor dv dt '[b, o])
 matMulLensAdam b1 b2 eps = repara r matMulLensCore
   where
     ad :: Momentum2
@@ -285,83 +291,92 @@ matMulLensAdam b1 b2 eps = repara r matMulLensCore
     -- q :: Lens' (((RM, RM), RM), ((RV, RV), RV)) MMP
     q :: Lens' (TwoNOne (Tensor dv dt '[o, i]), TwoNOne (Tensor dv dt '[o])) (MMP dv dt o i)
     q = alongside ad ad -- kinda neat that we still maintain the flexibility to spec to matrix or vector here!
-
     r :: Lens' (Three (MMP dv dt o i)) (MMP dv dt o i)
     r = rot . q
 {-# INLINE matMulLensAdam #-}
 
 -- lazy type def, actually more general but won't use it elsewhere anyway
-rot :: Iso' ((a,d),(b,e),(c,f)) (((a,b),c),((d,e),f))
+rot :: Iso' ((a, d), (b, e), (c, f)) (((a, b), c), ((d, e), f))
 rot = iso fwd rev
   where
-    fwd ((a,d),(b,e),(c,f)) = (((a,b),c),((d,e),f))
-    rev (((a,b),c),((d,e),f)) = ((a,d),(b,e),(c,f))
+    fwd ((a, d), (b, e), (c, f)) = (((a, b), c), ((d, e), f))
+    rev (((a, b), c), ((d, e), f)) = ((a, d), (b, e), (c, f))
+{-# INLINE rot #-}
 
--- -------------------------
--- -- CONVOLUTION --
--- -------------------------
+-- No padding, stride 1 — mirrors the HMatrix corr2/conv2 pair
+convLens ::
+  forall batch inC outC kH kW h w dv dt t oH oW.
+  ( t ~ Tensor dv dt,
+    KnownNat kH,
+    KnownNat kW,
+    KnownNat outC,
+    ConvSideCheck h kH 1 0 oH,
+    ConvSideCheck w kW 1 0 oW,
+    T.All KnownNat '[inC, outC, h, w, batch, oH, oW],
+    -- req'd by backwards pass dx calc
+    -- ((oH - kH) + 1) ~ h, ((oW - kW) + 1) ~ w,
+    -- 1 <= h,
+    -- 1 <= w,
+    -- kH -1 <= oH,
+    -- kW -1 <= oW,
+    -- bottom 2 only req'd by the T.zeros
+    T.KnownDType dt,
+    T.KnownDevice dv
+  ) =>
+  ParaLens'
+    (t '[outC, inC, kH, kW]) -- kernel
+    (t '[batch, inC, h, w]) -- input
+    (t '[batch, outC, oH, oW]) -- output
+convLens = lens fwd rev
+  where
+    fwd (kernel, x) = T.conv2d @'(1, 1) @'(0, 0) kernel T.zeros x
 
--- rot180 :: Matrix Double -> Matrix Double
--- rot180 = fliprl . flipud
+    rev (kernel, x) grad = (dW, dx)
+      where
+        -- dx :: t '[batch, inC, h, w]
+        -- dx = T.convTranspose2d @'(1,1) @'(0,0) kernel T.zeros grad
 
--- convolve2D :: ParaLens' (Matrix Double) (Matrix Double) (Matrix Double)
--- convolve2D = lens (uncurry corr2) rev
---   where
---     -- fwd :: (Matrix Double, Matrix Double) -> Matrix Double
---     -- fwd (k, a) = corr2 k a
+        -- convolution_backward_overrideable computes both gradients in one call
+        (dxU, dWU, _) =
+          I.convolution_backward_overrideable
+            (toDynamic grad)
+            (toDynamic x)
+            (toDynamic kernel)
+            [1, 1] -- stride
+            [0, 0] -- padding
+            [1, 1] -- dilation
+            False -- not transposed
+            [0, 0] -- output_padding
+            1 -- groups
+            (True, True, False) -- compute dx, dW, skip bias grad
+        dW = UnsafeMkTensor dWU
+        dx = UnsafeMkTensor dxU
+{-# INLINE convLens #-}
 
---     rev :: (Matrix Double, Matrix Double) -> Matrix Double -> (Matrix Double, Matrix Double)
---     rev (k, a) dy = (dk, da)
---       where
---         dk = corr2 dy a
---         da = conv2 (rot180 k) dy
+maxPool ::
+  forall kernelSize stride padding channels h w batch oH oW dtype device t.
+  ( t ~ Tensor device dtype,
+    T.All KnownNat '[Fst kernelSize, Snd kernelSize, Fst stride, Snd stride, Fst padding, Snd padding, channels, h, w, batch],
+    ConvSideCheck h (Fst kernelSize) (Fst stride) (Fst padding) oH,
+    ConvSideCheck w (Snd kernelSize) (Snd stride) (Snd padding) oW
+  ) =>
+  Lens' (t '[batch, channels, h, w]) (t '[batch, channels, oH, oW])
+maxPool = lens fwd rev
+  where
+    fwd :: t '[batch, channels, h, w] -> t '[batch, channels, oH, oW]
+    fwd = T.maxPool2d @kernelSize @stride @padding
 
--- type Image = [Matrix Double]
--- type Kernels = [[Matrix Double]]        -- [out_channel][in_channel]
-
--- correlate2D :: ParaLens' Kernels Image Image
--- correlate2D = lens fwd rev
---   where
---     fwd (ks, img) =
---         [ foldl1 add [ corr2 k i | (k, i) <- zip ks_o img ]
---         | ks_o <- ks ]
-
---     rev (ks, img) dy = (dks, dimg)
---       where
---         dks  = [ [ corr2 d i | i <- img ] | d <- dy ]
---         dimg = [ foldl1 add [ conv2 (rot180 (ks_o !! ic)) d
---                              | (ks_o, d) <- zip ks dy ]
---                | ic <- [0..length img - 1] ]
-
--- maxPool2DChannel :: Int -> Int -> Lens' (Matrix Double) (Matrix Double)
--- maxPool2DChannel kh kw = lens fwd rev
---   where
---     blockIndices m = [(i, j) | i <- [0..rows m `div` kh - 1]
---                               , j <- [0..cols m `div` kw - 1]]
-
---     getBlock m i j = subMatrix (i*kh, j*kw) (kh, kw) m
-
---     fwd :: Matrix Double -> Matrix Double
---     fwd m = let oh = rows m `div` kh
---                 ow = cols m `div` kw
---             in (oh><ow) [maxElement (getBlock m i j) | (i,j) <- blockIndices m]
-
---     rev :: Matrix Double -> Matrix Double -> Matrix Double
---     rev x dy =
---         let updates = do
---                 (i, j) <- blockIndices x
---                 let block    = getBlock x i j
---                     (_pi, pj) = maxIndex block -- shadows pi
---                     grad     = dy `atIndex` (i, j)
---                 return ((i*kh + _pi, j*kw + pj), grad)
---         in accum (konst 0 (rows x, cols x)) (+) updates
-
--- -- TODO: Smth possible with traverse here to lift the lens up?
--- -- maxPool2D kh kw = traverse . maxPool2DChannel kh kw
--- maxPool2D :: Int -> Int -> Lens' Image Image
--- maxPool2D kh kw = lens fwd rev
---   where
---     cl :: Lens' (Matrix Double) (Matrix Double)
---     cl = maxPool2DChannel kh kw
---     fwd = map (view cl)
---     rev xs dys = zipWith (set cl) dys xs -- TODO: is the order right?
+    rev :: t '[batch, channels, h, w] -> t '[batch, channels, oH, oW] -> t '[batch, channels, h, w]
+    rev x grad = UnsafeMkTensor $
+      let kh = T.natValI @(Fst kernelSize)
+          kw = T.natValI @(Snd kernelSize)
+          sh = T.natValI @(Fst stride)
+          sw = T.natValI @(Snd stride)
+          ph = T.natValI @(Fst padding)
+          pw = T.natValI @(Snd padding)
+          h' = T.natValI @h
+          w' = T.natValI @w
+          (_, inds) = I.max_pool2d_with_indices
+            (toDynamic x) (kh,kw) (sh,sw) (ph,pw) (1,1) False -- dilation 1,1
+      in I.max_unpool2d (toDynamic grad) inds (h', w')
+{-# INLINE maxPool #-}
