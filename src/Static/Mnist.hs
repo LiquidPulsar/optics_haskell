@@ -54,6 +54,7 @@ memStats = do
 --   dense (MMP 10 125)   → sigmoid               → [batch,  10]
 
 type BatchSize = 32
+-- 10x too much seemingly
 type NumTrain  = 6000--0
 type NumTest   = 1000--0
 
@@ -68,6 +69,7 @@ type SaneMnist dev dt =
   , CanAddLens dev dt
   , T.StandardFloatingPointDTypeValidation dev dt
   , T.ComparisonDTypeIsValid dev dt
+  , T.MeanDTypeValidation dev dt
   , T.KnownDevice dev
   , T.KnownDType dt
   )
@@ -103,33 +105,35 @@ mnistModel ::
     ()
     (Out (t '[b, 10]))
 mnistModel = argToPara -- 28
-  .#. convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 13
-  .#. convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 5
-  .#. rightLens (flatten @b @'[5, 5, 5]) . matMulLens . sigmoid
+  .#. withGradDesc convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 13
+  .#. withGradDesc convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 5
+  .#. rightLens (flatten @b @'[5, 5, 5]) . matMulLens
 
 mnistModelLoss ::
   forall b dev dt t.
   ( t ~ Tensor dev dt
   , KnownNat b
+  , T.AllDimsPositive '[b]
   , SaneMnist dev dt
   ) =>
   ParaLens'
     ((Inp (t '[b, 1, 28, 28]), MnistP dev dt), Tgt (t '[b, 10]))
     ()
     (Out (t '[]))
-mnistModelLoss = mnistModel .#. lossSmooth
+mnistModelLoss = mnistModel .#. softMaxCELoss
 
 mnistModel' ::
   forall b dev dt t.
   ( t ~ Tensor dev dt
   , KnownNat b
+  , T.AllDimsPositive '[b]
   , SaneMnist dev dt
   ) =>
   ParaLens'
     ((Inp (t '[b, 1, 28, 28]), MnistP dev dt), Tgt (t '[b, 10]))
     ()
     ()
-mnistModel' = mnistModel .#. lossSmooth . lrSmooth 0.01
+mnistModel' = mnistModel .#. softMaxCELoss . lrSmooth 1e-4
 
 -- ─── Initialisation ───────────────────────────────────────────────────────────
 
@@ -140,11 +144,17 @@ mnistInitParams ::
   , T.KnownDevice dev
   ) =>
   IO (MnistP dev dt)
-mnistInitParams = randInit
---   (,,) <$> T.randn                   -- Conv1K: [3, 1, 3, 3]
---        <*> T.randn                   -- Conv2K: [5, 3, 4, 4]
---        <*> liftA2 (,) T.randn T.randn  -- DenseP: (weight, bias)
---   <&> \(c1, c2, d) -> (c1, (c2, d))
+mnistInitParams = do
+  -- He init: std = sqrt(2 / fan_in), prevents sigmoid saturation in dense layer
+  -- Conv1 [3,1,3,3] fan_in = 1*3*3 = 9
+  -- Conv2 [5,3,4,4] fan_in = 3*4*4 = 48
+  -- Dense [10,125]  fan_in = 125
+  let sc x = T.mulScalar (x :: Float)
+  c1 <- sc (sqrt (2/9))   <$> T.randn
+  c2 <- sc (sqrt (2/48))  <$> T.randn
+  w  <- sc (sqrt (2/125)) <$> T.randn
+  let b = T.zeros
+  pure (c1, (c2, (w, b)))
 
 -- ─── Data loading ─────────────────────────────────────────────────────────────
 
@@ -230,6 +240,41 @@ mnistAccuracy p targets = fromIntegral correct / fromIntegral total
     correct = length (filter id results)
     total   = length results
 
+-- ─── Diagnostics ──────────────────────────────────────────────────────────────
+
+mnistDiagnose ::
+  forall dev dt.
+  ( SaneMnist dev dt
+  , T.StandardDTypeValidation dev dt
+  ) =>
+  MnistP dev dt ->
+  [( Tensor dev dt '[BatchSize, 1, 28, 28]
+   , Tensor dev dt '[BatchSize, 10] )] ->
+  IO ()
+mnistDiagnose p testT = do
+  -- Prediction class histogram
+  let preds  = concatMap (\(imgs, _) -> mnistPredict p imgs) testT
+      counts = map (\c -> (c, length (filter (== c) preds))) [0 .. 9]
+  putStrLn "Prediction histogram:"
+  forM_ counts $ \(c, n) ->
+    putStrLn $ "  class " <> show c <> ": " <> show n
+
+  -- Parameter stats: mean, std (NaN shows up as NaN here)
+  let (c1, (c2, (w, b))) = p
+      stat lbl t =
+        let d = toDynamic t
+            m = U.asValue (U.mean d) :: Float
+            s = U.asValue (U.std  d) :: Float
+        in putStrLn $ "  " <> lbl
+             <> "  mean=" <> show m
+             <> "  std="  <> show s
+             <> if isNaN m || isNaN s then "  [NaN!]" else ""
+  putStrLn "Parameter stats:"
+  stat "conv1  " c1
+  stat "conv2  " c2
+  stat "dense_w" w
+  stat "dense_b" b
+
 -- ─── Entry point ──────────────────────────────────────────────────────────────
 
 mnistTrain :: IO ()
@@ -250,14 +295,25 @@ mnistTrain = do
   p0 <- mnistInitParams @'(T.CPU, 0) @T.Float
   t0 <- getCurrentTime
 
+  -- let paramL1Diff (c1,  (c2,  (w,  b)))
+  --                 (c1', (c2', (w', b'))) =
+  --       let diff t t' = U.asValue . U.sumAll . U.abs
+  --                         $ U.sub (toDynamic t) (toDynamic t') :: Float
+  --       in [ ("conv1",   diff c1 c1')
+  --          , ("conv2",   diff c2 c2')
+  --          , ("dense_w", diff w  w' )
+  --          , ("dense_b", diff b  b' ) ]
+
   let epochs = iterate (mnistEpoch trainT) p0
   forM_ (zip [0 ..] epochs) $ \(e, p) -> do
+  -- forM_ (zip [0 ..] (zip epochs (tail epochs))) $ \(e, (p, p')) -> do
     performMajorGC
-    -- memStats
-    let acc = mnistAccuracy p testT
+    let acc   = mnistAccuracy p testT
+        -- diffs = paramL1Diff p p'
     t1 <- getCurrentTime
     putStrLn $ unwords
       [ "epoch",    show (e  :: Int)
       , "accuracy", show acc
       , "time",     show (diffUTCTime t1 t0)
       ]
+    -- forM_ diffs $ \(name, d) -> putStrLn $ "  " <> name <> " Δ=" <> show d

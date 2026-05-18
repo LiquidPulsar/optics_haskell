@@ -77,7 +77,7 @@ adaGrad eps = lens snd rev
     rev :: (t ~ T.Tensor dv dt, T.KnownDevice dv, T.StandardFloatingPointDTypeValidation dv dt) => (t shape, t shape) -> t shape -> (t shape, t shape)
     rev (g, p) p' = (g', p + update * p')
       where
-        g' = g + p * p'
+        g' = g + p' * p'
         update = T.mulScalar eps . T.reciprocal . T.addScalar delta $ T.sqrt g'
 
 -- -- Note: paper mentions a corrected estimate tracking time?

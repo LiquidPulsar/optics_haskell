@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -11,8 +13,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoStarIsType #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_GHC -Wno-unused-local-binds #-}
 
 module Static.Layers where
@@ -23,13 +23,13 @@ import Control.Monad
 import Core
 import Data.Proxy
 import GHC.TypeNats
+import Static.Bugfix (convTranspose2d, im2col)
 import Static.Optim
 import qualified Torch as U
 import qualified Torch.Functional.Internal as I
-import Torch.Typed (ConvSideCheck, Fst, Init, Snd, Tensor (UnsafeMkTensor), toDynamic, type (++), natValI)
+import Torch.Typed (ConvSideCheck, Fst, Init, Snd, Tensor (UnsafeMkTensor), natValI, toDynamic, type (++))
 import qualified Torch.Typed as T
 import Types hiding (MMP)
-import Static.Bugfix (convTranspose2d, im2col)
 
 -------------------------
 -- CARTESIAN REVERSE DIFFERENTIAL CATEGORIES --
@@ -334,38 +334,40 @@ convLens = lens fwd rev
     fwd :: (t '[outC, inC, kH, kW], t '[batch, inC, h, w]) -> t '[batch, outC, oH, oW]
     fwd (kernel, x) = T.conv2d @'(1, 1) @'(0, 0) kernel T.zeros x
 
-    rev :: (t '[outC, inC, kH, kW], t '[batch, inC, h, w]) -> t '[batch, outC, oH, oW] ->(t '[outC, inC, kH, kW], t '[batch, inC, h, w])
+    rev :: (t '[outC, inC, kH, kW], t '[batch, inC, h, w]) -> t '[batch, outC, oH, oW] -> (t '[outC, inC, kH, kW], t '[batch, inC, h, w])
     rev (kernel, x) grad = (dW, dx)
       where
-        inC'  = natValI @inC
+        inC' = natValI @inC
         outC' = natValI @outC
-        kh    = natValI @kH
-        kw    = natValI @kW
-        oh    = natValI @oH
-        ow    = natValI @oW
+        kh = natValI @kH
+        kw = natValI @kW
+        oh = natValI @oH
+        ow = natValI @oW
 
         opts = U.withDType (T.dtypeVal @dt) . U.withDevice (T.deviceVal @dv) $ U.defaultOpts
 
         -- dx: transposed convolution — single tensor, no tuple
         dx :: t '[batch, inC, h, w]
-        dx = convTranspose2d @'(1,1) @'(0,0) kernel T.zeros grad
+        dx = convTranspose2d @'(1, 1) @'(0, 0) kernel T.zeros grad
 
         -- dW: im2col unfolds x into patches, then bmm contracts over spatial dims
         -- avoiding convolution_backward_overrideable entirely
         dW :: t '[outC, inC, kH, kW]
-        dW = 
-          let xU       = toDynamic x
-              gradU    = toDynamic grad
+        dW =
+          let xU = toDynamic x
+              gradU = toDynamic grad
               -- [batch, inC*kH*kW, oH*oW]
-              xCol     = im2col xU (kh,kw) (1,1) (0,0) (1,1)
+              xCol = im2col xU (kh, kw) (1, 1) (0, 0) (1, 1)
               -- [batch, outC, oH*oW]
               -- [b,_,oh,ow] = U.shape gradU
-              gradFlat = U.reshape [-1, outC', oh*ow] gradU
+              gradFlat = U.reshape [-1, outC', oh * ow] gradU
               -- [batch, outC, inC*kH*kW]
-              dWAll    = I.bmm gradFlat (U.transpose (U.Dim 1) (U.Dim 2) xCol)
-          -- in T.zeros
-          in UnsafeMkTensor $ U.reshape [outC', inC', kh, kw] $
-              I.sumDim dWAll 0 False (U.dtype xU)
+              dWAll = I.bmm gradFlat (U.transpose (U.Dim 1) (U.Dim 2) xCol)
+           in -- in T.zeros
+              UnsafeMkTensor $
+                U.reshape [outC', inC', kh, kw] $
+                  U.divScalar (oh * ow) $
+                    I.sumDim dWAll 0 False (U.dtype xU)
 {-# INLINE convLens #-}
 
 maxPool ::
@@ -373,7 +375,7 @@ maxPool ::
   ( t ~ Tensor device dtype,
     T.All KnownNat '[Fst kernelSize, Snd kernelSize, Fst stride, Snd stride, Fst padding, Snd padding, channels, h, w, batch],
     ConvSideCheck h (Fst kernelSize) (Fst stride) (Fst padding) oH,
-    ConvSideCheck w (Snd kernelSize) (Snd stride) (Snd padding) oW, 
+    ConvSideCheck w (Snd kernelSize) (Snd stride) (Snd padding) oW,
     T.KnownDType dtype
   ) =>
   Lens' (t '[batch, channels, h, w]) (t '[batch, channels, oH, oW])
@@ -383,33 +385,37 @@ maxPool = lens fwd rev
     fwd = T.maxPool2d @kernelSize @stride @padding
 
     rev :: t '[batch, channels, h, w] -> t '[batch, channels, oH, oW] -> t '[batch, channels, h, w]
-    rev x grad = UnsafeMkTensor $
-      let kh = T.natValI @(Fst kernelSize)
-          kw = T.natValI @(Snd kernelSize)
-          h' = T.natValI @h
-          w' = T.natValI @w
-          xU    = toDynamic x
-          gradU = toDynamic grad
-          -- recompute forward to get max values
-          n     = toDynamic (fwd x)
-          -- repeat max values and gradient back to input spatial size
-          expand t = I.repeat_interleave_tlll
-                      (I.repeat_interleave_tlll t kh 2 h')
-                      kw 3 w'
-          mask  = U.toType (T.dtypeVal @dtype) $ U.eq xU (expand n)
-      in U.mul mask (expand gradU)
-    -- rev x grad = UnsafeMkTensor $
-    --   let kh = T.natValI @(Fst kernelSize)
-    --       kw = T.natValI @(Snd kernelSize)
-    --       sh = T.natValI @(Fst stride)
-    --       sw = T.natValI @(Snd stride)
-    --       ph = T.natValI @(Fst padding)
-    --       pw = T.natValI @(Snd padding)
-    --       h' = T.natValI @h
-    --       w' = T.natValI @w
-    --       (_, inds) = I.max_pool2d_with_indices
-    --         (toDynamic x) (kh,kw) (sh,sw) (ph,pw) (1,1) False -- dilation 1,1
-    --   in I.max_unpool2d (toDynamic grad) inds (h', w')
+    rev x grad =
+      UnsafeMkTensor $
+        let kh = T.natValI @(Fst kernelSize)
+            kw = T.natValI @(Snd kernelSize)
+            h' = T.natValI @h
+            w' = T.natValI @w
+            xU = toDynamic x
+            gradU = toDynamic grad
+            -- recompute forward to get max values
+            n = toDynamic (fwd x)
+            -- repeat max values and gradient back to input spatial size
+            expand t =
+              I.repeat_interleave_tlll
+                (I.repeat_interleave_tlll t kh 2 h')
+                kw
+                3
+                w'
+            mask = U.toType (T.dtypeVal @dtype) $ U.eq xU (expand n)
+         in U.mul mask (expand gradU)
+-- rev x grad = UnsafeMkTensor $
+--   let kh = T.natValI @(Fst kernelSize)
+--       kw = T.natValI @(Snd kernelSize)
+--       sh = T.natValI @(Fst stride)
+--       sw = T.natValI @(Snd stride)
+--       ph = T.natValI @(Fst padding)
+--       pw = T.natValI @(Snd padding)
+--       h' = T.natValI @h
+--       w' = T.natValI @w
+--       (_, inds) = I.max_pool2d_with_indices
+--         (toDynamic x) (kh,kw) (sh,sw) (ph,pw) (1,1) False -- dilation 1,1
+--   in I.max_unpool2d (toDynamic grad) inds (h', w')
 {-# INLINE maxPool #-}
 
 -- ─── Flatten lens ─────────────────────────────────────────────────────────────
@@ -418,17 +424,17 @@ maxPool = lens fwd rev
 -- the Natural/Nat kind mismatch that T.Numel and T.Product both have.
 flatten ::
   forall batch shape dev dt t.
-  ( t ~ Tensor dev dt
-  , KnownNat batch
-  , T.KnownShape shape
-  , KnownNat (T.Product shape)
+  ( t ~ Tensor dev dt,
+    KnownNat batch,
+    T.KnownShape shape,
+    KnownNat (T.Product shape)
   ) =>
   Lens' (t (batch : shape)) (t '[batch, T.Product shape])
 flatten = lens fwd rev
   where
-    b    = natValI @batch
+    b = natValI @batch
     flat = natValI @(T.Product shape)
-    dims = T.shapeVal @shape          -- runtime shape for rev reshape
-    fwd x   = UnsafeMkTensor $ U.reshape [b, flat] (toDynamic x) -- use -1 here to save the flat?
+    dims = T.shapeVal @shape -- runtime shape for rev reshape
+    fwd x = UnsafeMkTensor $ U.reshape [b, flat] (toDynamic x) -- use -1 here to save the flat?
     rev _ g = UnsafeMkTensor $ U.reshape (b : dims) (toDynamic g)
 {-# INLINE flatten #-}
