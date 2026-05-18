@@ -57,6 +57,13 @@ library
     -- Import common warning flags.
     import:           warnings
 
+    ghc-options:
+        -O2
+        -- -fllvm
+        -flate-specialise
+        -fspecialise-aggressively
+        -rtsopts
+
     -- Modules exported by the library.
     exposed-modules:
         MyLib
@@ -66,6 +73,7 @@ library
         IrisMLPMom
         Static.Iris
         Compile
+        Static.Mnist
 
 
     -- Modules included in this library but not exported.
@@ -84,6 +92,7 @@ library
         Static.Optim
         IrisData
         Stack
+        Static.Bugfix
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

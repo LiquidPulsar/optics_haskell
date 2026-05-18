@@ -6,6 +6,7 @@ import Core
 import Optim
 import Control.Lens
 import Control.Arrow
+import Data.List (foldl')
 
 runModel :: ParaLens' a b c -> (a, b) -> c
 runModel = view
@@ -26,6 +27,7 @@ trainOne :: ParaLRLens' ((inp, p), tgt) () -> p -> (inp, tgt) -> p
 trainOne m p = snd . fst . runModelUpdate m . first (,p)
 {-# INLINE trainOne #-}
 
+-- Needs to be strict to avoid very deep-nested thunks!
 trainMany :: ParaLRLens' ((inp, p), tgt) () -> p -> [(inp, tgt)] -> p
-trainMany m = foldl $ trainOne m
+trainMany m = foldl' $ trainOne m
 {-# INLINE trainMany #-}
