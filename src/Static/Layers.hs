@@ -366,7 +366,7 @@ convLens = lens fwd rev
            in -- in T.zeros
               UnsafeMkTensor $
                 U.reshape [outC', inC', kh, kw] $
-                  U.divScalar (oh * ow) $
+                  -- U.divScalar (oh * ow) $
                     I.sumDim dWAll 0 False (U.dtype xU)
 {-# INLINE convLens #-}
 

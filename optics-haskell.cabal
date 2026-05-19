@@ -74,11 +74,12 @@ library
         Static.Iris
         Compile
         Static.Mnist
+        Static.Layers
+        Core
 
 
     -- Modules included in this library but not exported.
     other-modules:
-        Core
         Examples
         Layers
         Loss
@@ -87,7 +88,6 @@ library
         Sample
         Types
         MnistCNN
-        Static.Layers
         Static.Loss
         Static.Optim
         IrisData
@@ -167,10 +167,12 @@ test-suite optics-haskell-test
 
     -- Test dependencies.
     build-depends:
-        -- base ^>=4.17.2.0,
+        base >= 4.17 && < 4.23,
         optics-haskell,
         lens ==5.3.5,
-        hmatrix ==0.20.2
+        hmatrix ==0.20.2,
+        hasktorch ==0.2.2.0,
+        libtorch-ffi ==2.0.2.0
 
 benchmark optics-haskell-bench
     import:           warnings
