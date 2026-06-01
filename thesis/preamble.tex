@@ -1,0 +1,48 @@
+% --- lhs2tex bootstrap (must come first) ---
+% Fires the ReadOnlyOnce blocks in the preamble so \usepackage calls inside
+% generated chapter files are suppressed when \include'd after \begin{document}.
+\input{generated/lhs2tex-preamble}
+
+% --- Encoding & fonts ---
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+
+% --- Math & symbols ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{stmaryrd}     % semantic brackets [| |], used in PL/type theory
+
+% --- Theorems ---
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+
+% --- Page layout ---
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% --- Graphics ---
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+
+% --- Tables ---
+\usepackage{booktabs}
+
+% --- Diagrams ---
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc}
+\tikzset{
+  paralens/.style={draw, thick, minimum width=1.4cm, minimum height=0.9cm},
+  wire/.style={->, >=Stealth, thick},
+  inwire/.style={->, >=Stealth, semithick, gray!70!black}
+}
+
+% --- References & links (load last) ---
+\usepackage{natbib}
+\usepackage[hidelinks]{hyperref}

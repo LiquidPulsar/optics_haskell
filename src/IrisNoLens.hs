@@ -10,7 +10,9 @@
 module IrisNoLens where
 
 import Control.DeepSeq
+import Control.Exception (evaluate)
 import Control.Monad (foldM)
+import Data.List (foldl')
 import GHC.Generics
 import Torch hiding (step)
 
@@ -85,6 +87,20 @@ irisTrainStep model optimizer input target = fst <$> runStep model optimizer los
 irisEpoch :: Optimizer o => IrisModel -> o -> [(Tensor, Tensor)] -> IO IrisModel
 irisEpoch initModel optimizer = foldM step initModel
   where step model = uncurry $ irisTrainStep model optimizer
+
+-- Strict left-fold variant: same per-batch work, different fold structure.
+-- Isolates foldM overhead by removing the right-recursive >>=  chain.
+irisEpochFoldl :: Optimizer o => IrisModel -> o -> [(Tensor, Tensor)] -> IO IrisModel
+irisEpochFoldl initModel optimizer =
+  foldl' (\mio b -> mio >>= \m -> uncurry (irisTrainStep m optimizer) b)
+         (return initModel)
+
+-- Forward pass only: compute the loss but do not call runStep.
+-- No .backward(), no flattenParameters, no parameter write-back.
+-- Used to isolate the combined cost of autograd backward + Generic traversal + update.
+irisEpochForwardOnly :: IrisModel -> [(Tensor, Tensor)] -> IO ()
+irisEpochForwardOnly model =
+  mapM_ (\(inp, tgt) -> evaluate $ irisModelLoss model inp tgt)
 
 --------------------------------------------------------------------------------
 -- FULL TRAINING

@@ -76,6 +76,8 @@ library
         Static.Mnist
         Static.Layers
         Core
+        IrisNoLens
+        Models
 
 
     -- Modules included in this library but not exported.
@@ -83,7 +85,6 @@ library
         Examples
         Layers
         Loss
-        Models
         Optim
         Sample
         Types
@@ -195,5 +196,4 @@ benchmark optics-haskell-bench
         criterion >= 1.5
     
     other-modules:
-        IrisNoLens
         HandRolled

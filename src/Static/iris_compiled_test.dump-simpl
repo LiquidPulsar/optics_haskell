@@ -1,0 +1,248 @@
+$wtest
+  = \ @dv_sYCD
+      @dt_sYCE
+      @b_sYCF
+      ww_sYCO
+      ww1_sYCP
+      ww2_sYD0
+      ww3_sYD1
+      ww4_sYD8
+      ww5_sYD9
+      ww6_sYDf
+      ww7_sYDk
+      ww8_sYDl ->
+      case $s$wtranspose ww2_sYD0 ww3_sYD1 of
+      { UnsafeMkTensor ww9_aE1X ->
+      case ww9_aE1X `cast` <Co:1> :: ... of
+      { ForeignPtr ww10_sYSP ww11_sYSQ ->
+      runRW#
+        (\ s_aE2l ->
+           case noDuplicate# s_aE2l of s'_aE2m { __DEFAULT ->
+           case $wmatmul_tt ww_sYCO ww1_sYCP ww10_sYSP ww11_sYSQ s'_aE2m of
+           { (# ipv_aE2o, ipv1_aE2p #) ->
+           case ipv1_aE2p of cy1_aE2r { ForeignPtr ipv2_aE2s ipv3_aE2t ->
+           case (lazy (cy1_aE2r `cast` <Co:2> :: ...)) `cast` <Co:1> :: ... of
+           { ForeignPtr ipv4_aE29 ipv5_aE2a ->
+           case ($wadd ww4_sYD8 ww5_sYD9 ipv4_aE29 ipv5_aE2a)
+                `cast` <Co:1> :: ...
+           of
+           { ForeignPtr ipv6_iLu0 ipv7_iLu1 ->
+           runRW#
+             (\ s1_aE4o ->
+                case noDuplicate# s1_aE4o of s'1_aE4p { __DEFAULT ->
+                case $wsigmoid_t ipv6_iLu0 ipv7_iLu1 s'1_aE4p of
+                { (# ipv8_aE4r, ipv9_aE4s #) ->
+                case ipv9_aE4s of cy2_aE4u { ForeignPtr ipv10_aE4v ipv11_aE4w ->
+                case lazy (UnsafeMkTensor (cy2_aE4u `cast` <Co:2> :: ...)) of
+                { UnsafeMkTensor ww12_Xa ->
+                case ww12_Xa `cast` <Co:1> :: ... of
+                { ForeignPtr ww13_sYST ww14_sYSU ->
+                case ww6_sYDf of { UnsafeMkTensor ww15_Xf ->
+                case ww15_Xf `cast` <Co:1> :: ... of
+                { ForeignPtr ww16_sYSX ww17_sYSY ->
+                case $s$wtranspose ww16_sYSX ww17_sYSY of
+                { UnsafeMkTensor ww18_Xk ->
+                case ww18_Xk `cast` <Co:1> :: ... of
+                { ForeignPtr ww19_sYT1 ww20_sYT2 ->
+                runRW#
+                  (\ s2_Xo ->
+                     case noDuplicate# s2_Xo of s'2_Xp { __DEFAULT ->
+                     case $wmatmul_tt ww13_sYST ww14_sYSU ww19_sYT1 ww20_sYT2 s'2_Xp of
+                     { (# ipv12_Xr, ipv13_Xs #) ->
+                     case ipv13_Xs of cy3_Xt { ForeignPtr ipv14_Xu ipv15_Xv ->
+                     case (lazy (cy3_Xt `cast` <Co:2> :: ...)) `cast` <Co:1> :: ... of
+                     { ForeignPtr ipv16_Xx ipv17_Xy ->
+                     case ($wadd ww7_sYDk ww8_sYDl ipv16_Xx ipv17_Xy)
+                          `cast` <Co:1> :: ...
+                     of
+                     { ForeignPtr ipv18_XA ipv19_XB ->
+                     ($wsigmoid ipv18_XA ipv19_XB) `cast` <Co:42> :: ...
+                     }
+                     }
+                     }
+                     }
+                     })
+                }
+                }
+                }
+                }
+                }
+                }
+                }
+                }
+                })
+           }
+           }
+           }
+           }
+           })
+      }
+      }
+
+test1
+  = \ @dv_sYCD @dt_sYCE @b_sYCF _ _ x_sYCI ->
+      case x_sYCI of { (ww_sYCK, ww1_sYCS) ->
+      case ww_sYCK of { UnsafeMkTensor ww2_sYCM ->
+      case ww2_sYCM `cast` <Co:1> :: ... of
+      { ForeignPtr ww3_sYT5 ww4_sYT6 ->
+      case ww1_sYCS of { (ww5_sYCU, ww6_sYDd) ->
+      case ww5_sYCU `cast` <Co:45> :: ... of { (ww7_sYCW, ww8_sYD4) ->
+      case ww7_sYCW of { UnsafeMkTensor ww9_sYCY ->
+      case ww9_sYCY `cast` <Co:1> :: ... of
+      { ForeignPtr ww10_sYT9 ww11_sYTa ->
+      case ww8_sYD4 of { UnsafeMkTensor ww12_sYD6 ->
+      case ww12_sYD6 `cast` <Co:1> :: ... of
+      { ForeignPtr ww13_sYTd ww14_sYTe ->
+      case ww6_sYDd of { (ww15_sYDf, ww16_sYDg) ->
+      case ww16_sYDg of { UnsafeMkTensor ww17_sYDi ->
+      case ww17_sYDi `cast` <Co:1> :: ... of
+      { ForeignPtr ww18_sYTh ww19_sYTi ->
+      $wtest
+        ww3_sYT5
+        ww4_sYT6
+        ww10_sYT9
+        ww11_sYTa
+        ww13_sYTd
+        ww14_sYTe
+        ww15_sYDf
+        ww18_sYTh
+        ww19_sYTi
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+
+test = test1 `cast` <Co:77> :: ...
+
+
+$whandRolledTest
+  = \ @dv_sYDV
+      @dt_sYDW
+      @b_sYDX
+      ww_sYE6
+      ww1_sYE7
+      ww2_sYEi
+      ww3_sYEj
+      ww4_sYEq
+      ww5_sYEr
+      ww6_sYEx
+      ww7_sYEC
+      ww8_sYED ->
+      case $s$wtranspose ww2_sYEi ww3_sYEj of
+      { UnsafeMkTensor ww9_aE1X ->
+      case ww9_aE1X `cast` <Co:1> :: ... of
+      { ForeignPtr ww10_sZ05 ww11_sZ06 ->
+      runRW#
+        (\ s_aE2l ->
+           case noDuplicate# s_aE2l of s'_aE2m { __DEFAULT ->
+           case $wmatmul_tt ww_sYE6 ww1_sYE7 ww10_sZ05 ww11_sZ06 s'_aE2m of
+           { (# ipv_aE2o, ipv1_aE2p #) ->
+           case ipv1_aE2p of cy1_aE2r { ForeignPtr ipv2_aE2s ipv3_aE2t ->
+           case (lazy (cy1_aE2r `cast` <Co:2> :: ...)) `cast` <Co:1> :: ... of
+           { ForeignPtr ipv4_aE29 ipv5_aE2a ->
+           case ($wadd ww4_sYEq ww5_sYEr ipv4_aE29 ipv5_aE2a)
+                `cast` <Co:1> :: ...
+           of
+           { ForeignPtr ipv6_aDJU ipv7_aDJV ->
+           runRW#
+             (\ s1_aE4o ->
+                case noDuplicate# s1_aE4o of s'1_aE4p { __DEFAULT ->
+                case $wsigmoid_t ipv6_aDJU ipv7_aDJV s'1_aE4p of
+                { (# ipv8_aE4r, ipv9_aE4s #) ->
+                case ipv9_aE4s of cy2_aE4u { ForeignPtr ipv10_aE4v ipv11_aE4w ->
+                case (lazy (UnsafeMkTensor (cy2_aE4u `cast` <Co:2> :: ...)))
+                     `cast` <Co:408> :: ...
+                of
+                { UnsafeMkTensor ww12_Xc ->
+                case ww12_Xc `cast` <Co:1> :: ... of
+                { ForeignPtr ww13_sZ09 ww14_sZ0a ->
+                case ww6_sYEx of { UnsafeMkTensor ww15_Xh ->
+                case ww15_Xh `cast` <Co:1> :: ... of
+                { ForeignPtr ww16_sZ0d ww17_sZ0e ->
+                case $s$wtranspose ww16_sZ0d ww17_sZ0e of
+                { UnsafeMkTensor ww18_Xj ->
+                case ww18_Xj `cast` <Co:1> :: ... of
+                { ForeignPtr ww19_sZ0h ww20_sZ0i ->
+                runRW#
+                  (\ s2_Xn ->
+                     case noDuplicate# s2_Xn of s'2_Xo { __DEFAULT ->
+                     case $wmatmul_tt ww13_sZ09 ww14_sZ0a ww19_sZ0h ww20_sZ0i s'2_Xo of
+                     { (# ipv12_Xq, ipv13_Xr #) ->
+                     case ipv13_Xr of cy3_Xs { ForeignPtr ipv14_Xt ipv15_Xu ->
+                     case (lazy (cy3_Xs `cast` <Co:2> :: ...)) `cast` <Co:1> :: ... of
+                     { ForeignPtr ipv16_Xw ipv17_Xx ->
+                     case ($wadd ww7_sYEC ww8_sYED ipv16_Xw ipv17_Xx)
+                          `cast` <Co:1> :: ...
+                     of
+                     { ForeignPtr ipv18_Xz ipv19_XA ->
+                     ($wsigmoid ipv18_Xz ipv19_XA) `cast` <Co:960> :: ...
+                     }
+                     }
+                     }
+                     }
+                     })
+                }
+                }
+                }
+                }
+                }
+                }
+                }
+                }
+                })
+           }
+           }
+           }
+           }
+           })
+      }
+      }
+
+handRolledTest
+  = \ @dv_sYDV @dt_sYDW @b_sYDX _ _ eta_sYE0 ->
+      case eta_sYE0 of { (ww_sYE2, ww1_sYEa) ->
+      case ww_sYE2 of { UnsafeMkTensor ww2_sYE4 ->
+      case ww2_sYE4 `cast` <Co:1> :: ... of
+      { ForeignPtr ww3_sZ0l ww4_sZ0m ->
+      case ww1_sYEa of { (ww5_sYEc, ww6_sYEv) ->
+      case ww5_sYEc `cast` <Co:45> :: ... of { (ww7_sYEe, ww8_sYEm) ->
+      case ww7_sYEe of { UnsafeMkTensor ww9_sYEg ->
+      case ww9_sYEg `cast` <Co:1> :: ... of
+      { ForeignPtr ww10_sZ0p ww11_sZ0q ->
+      case ww8_sYEm of { UnsafeMkTensor ww12_sYEo ->
+      case ww12_sYEo `cast` <Co:1> :: ... of
+      { ForeignPtr ww13_sZ0t ww14_sZ0u ->
+      case ww6_sYEv of { (ww15_sYEx, ww16_sYEy) ->
+      case ww16_sYEy of { UnsafeMkTensor ww17_sYEA ->
+      case ww17_sYEA `cast` <Co:1> :: ... of
+      { ForeignPtr ww18_sZ0x ww19_sZ0y ->
+      $whandRolledTest
+        ww3_sZ0l
+        ww4_sZ0m
+        ww10_sZ0p
+        ww11_sZ0q
+        ww13_sZ0t
+        ww14_sZ0u
+        ww15_sYEx
+        ww18_sZ0x
+        ww19_sZ0y
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }
+      }

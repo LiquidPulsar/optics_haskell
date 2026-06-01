@@ -9,9 +9,9 @@
 
 module Static.Loss where
 
-import Control.Arrow
 import Control.Lens
 import Core
+import Torch (numel)
 import qualified Torch.Typed as T
 import GHC.TypeLits
 
@@ -48,9 +48,11 @@ lossSmooth = lens fwd (flip rev')
     --      alpha tgt vec  guess vec    d(tgt)   d(pred)
     rev' :: t '[] -> (t shape, t shape) -> (t shape, t shape)
     -- This isn't what they said in the paper (swapped id and negate) but I think they're wrong
-    rev' alpha = (id &&& T.neg) . T.mul alpha . uncurry T.sub
-    -- rev' alpha (tgt, guess) = (d, T.neg d)
-    --   where d = T.mul alpha $ T.sub tgt guess
+    -- Also: include the 2/N factor from differentiating mean((tgt-guess)^2)
+    rev' alpha (tgt, guess) = (d, T.neg d)
+      where
+        n = fromIntegral (numel (T.toDynamic tgt)) :: Float
+        d = T.mulScalar (2 / n) . T.mul alpha $ T.sub tgt guess
 
 -- lossPoly :: ParaLens' ZVector ZVector ZVector -- in POLY_Z2
 -- lossPoly = lens fwd rev

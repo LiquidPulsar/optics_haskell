@@ -1,0 +1,31 @@
+\documentclass[12pt, a4paper, oneside]{report}
+
+\input{preamble}
+
+\begin{document}
+
+\title{ML Through the Looking Glass\\ \vspace{0.5em} \large Machine Learning with Lenses in Haskell}
+\author{Alexandre Noel}
+
+% --- Frontmatter: plain .tex files, no lhs2tex preprocessing needed ---
+\input{frontmatter/titlepage}
+\input{frontmatter/abstract}
+
+\tableofcontents
+
+\include{generated/01-introduction}
+\include{generated/02-background}
+\include{generated/lenses}
+\include{generated/03-design}
+\include{generated/layers}
+\include{generated/loss}
+\include{generated/optim}
+\include{generated/04-implementation}
+\include{generated/casestudies}
+\include{generated/05-evaluation}
+\include{generated/06-conclusion}
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

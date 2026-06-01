@@ -8,10 +8,13 @@ module Main (main) where
 import Control.Lens (set, view)
 import Control.Monad (unless)
 import GHC.Generics (Generic)
+import qualified IrisNoLens as HT
+import Models (trainOne)
+import qualified Static.Iris as SI
 import qualified Static.Layers as L
 import System.Exit (exitFailure)
 import Torch
-  ( GD (..), Optimizer, Parameter, Parameterized,
+  ( GD (..), Linear (..), Optimizer, Parameter, Parameterized,
     asTensor, asValue, flattenParameters, makeIndependent,
     matmul, reshape, runStep, sumAll, toDependent, transpose2D,
   )
@@ -245,6 +248,105 @@ testFlatten = do
     ]
 
 -------------------------
+-- Iris equivalence helpers
+-------------------------
+
+testW1, testB1, testW2, testB2 :: [Float]
+testW1 = take 16 [0.10, 0.15 ..]
+testB1 = [0.1, -0.1, 0.2, -0.2]
+testW2 = take 12 [0.50, 0.55 ..]
+testB2 = [0.05, 0.10, 0.15]
+
+-- Build typed and dynamic models from the same raw weights.
+makeModels
+  :: [Float] -> [Float] -> [Float] -> [Float]
+  -> IO (SI.IParams 1 Dev Flt, HT.IrisModel)
+makeModels w1vs b1vs w2vs b2vs = do
+  let w1d = reshape [4, 4] $ asTensor w1vs
+      b1d = asTensor b1vs
+      w2d = reshape [3, 4] $ asTensor w2vs
+      b2d = asTensor b2vs
+  let typedParams =
+        ( ( UnsafeMkTensor w1d :: Tensor Dev Flt '[4, 4]
+          , UnsafeMkTensor b1d :: Tensor Dev Flt '[4]   )
+        , ( UnsafeMkTensor w2d :: Tensor Dev Flt '[3, 4]
+          , UnsafeMkTensor b2d :: Tensor Dev Flt '[3]   ) )
+  w1P <- makeIndependent w1d
+  b1P <- makeIndependent b1d
+  w2P <- makeIndependent w2d
+  b2P <- makeIndependent b2d
+  let dynModel = HT.IrisModel
+        { HT.linearLayer1 = Linear { weight = w1P, bias = b1P }
+        , HT.linearLayer2 = Linear { weight = w2P, bias = b2P } }
+  return (typedParams, dynModel)
+
+-- Extract the four raw tensors from a trained dynamic model.
+dynParams :: HT.IrisModel -> (Torch.Tensor, Torch.Tensor, Torch.Tensor, Torch.Tensor)
+dynParams m =
+  ( toDependent (weight (HT.linearLayer1 m))
+  , toDependent (bias   (HT.linearLayer1 m))
+  , toDependent (weight (HT.linearLayer2 m))
+  , toDependent (bias   (HT.linearLayer2 m)) )
+
+-------------------------
+-- testIrisFwdEquiv
+-- Forward pass: same weights + same input → same output.
+-- Expected: PASS
+-------------------------
+
+testIrisFwdEquiv :: IO [Bool]
+testIrisFwdEquiv = do
+  (typedParams, dynModel) <- makeModels testW1 testB1 testW2 testB2
+  let xd = reshape [8, 4] $ asTensor (take 32 [0.01, 0.02 ..] :: [Float])
+      xt = UnsafeMkTensor xd :: Tensor Dev Flt '[8, 4]
+      typedOut = SI.irisPredict @1 typedParams xt
+      dynOut   = HT.irisModel dynModel xd
+  sequence
+    [ check "iris fwd equiv" (toDynamic typedOut) dynOut ]
+
+-------------------------
+-- testIrisTrainStepEquiv
+-- One gradient step from identical init → same updated params?
+-- Expected: FAIL — lossSmooth.rev' omits the 2/N MSE normalisation
+-- factor (N = 8*3 = 24), so typed updates are 12x larger than PyTorch.
+-------------------------
+
+testIrisTrainStepEquiv :: IO [Bool]
+testIrisTrainStepEquiv = do
+  (typedParams, dynModel) <- makeModels testW1 testB1 testW2 testB2
+  let (inpT, tgtT) : _ = SI.irisTargets @Dev @Flt
+      inpD = toDynamic inpT
+      tgtD = toDynamic tgtT
+  let ((w1t', b1t'), (w2t', b2t')) =
+        trainOne (SI.irisModel' @1) typedParams (inpT, tgtT)
+  dynModel' <- HT.irisTrainStep dynModel GD inpD tgtD
+  let (w1d', b1d', w2d', b2d') = dynParams dynModel'
+  sequence
+    [ check "step w1" (toDynamic w1t') w1d'
+    , check "step b1" (toDynamic b1t') b1d'
+    , check "step w2" (toDynamic w2t') w2d'
+    , check "step b2" (toDynamic b2t') b2d' ]
+
+-------------------------
+-- testIrisEpochEquiv
+-- Full epoch (18 batches) from identical init → same final params?
+-- Expected: FAIL — same 2/N discrepancy, accumulated over all batches.
+-------------------------
+
+testIrisEpochEquiv :: IO [Bool]
+testIrisEpochEquiv = do
+  (typedParams, dynModel) <- makeModels testW1 testB1 testW2 testB2
+  let htTargets = [(toDynamic l, toDynamic r) | (l, r) <- SI.irisTargets @Dev @Flt]
+  let ((w1t', b1t'), (w2t', b2t')) = SI.irisEpoch @1 typedParams
+  dynModel' <- HT.irisEpoch dynModel GD htTargets
+  let (w1d', b1d', w2d', b2d') = dynParams dynModel'
+  sequence
+    [ check "epoch w1" (toDynamic w1t') w1d'
+    , check "epoch b1" (toDynamic b1t') b1d'
+    , check "epoch w2" (toDynamic w2t') w2d'
+    , check "epoch b2" (toDynamic b2t') b2d' ]
+
+-------------------------
 -- MAIN
 -------------------------
 
@@ -258,6 +360,9 @@ main = do
     , testConvForward
     , testConvDK
     , testFlatten
+    , testIrisFwdEquiv
+    , testIrisTrainStepEquiv
+    , testIrisEpochEquiv
     ]
   let passed = length (filter id results)
       total  = length results

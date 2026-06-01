@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -420,21 +419,16 @@ maxPool = lens fwd rev
 
 -- ─── Flatten lens ─────────────────────────────────────────────────────────────
 
--- Flattens all dims after batch into one, using ShapeProduct (:: Nat) to avoid
--- the Natural/Nat kind mismatch that T.Numel and T.Product both have.
 flatten ::
   forall batch shape dev dt t.
   ( t ~ Tensor dev dt,
     KnownNat batch,
     T.KnownShape shape,
-    KnownNat (T.Product shape)
+    KnownNat (T.Numel shape)
   ) =>
-  Lens' (t (batch : shape)) (t '[batch, T.Product shape])
+  Lens' (t (batch : shape)) (t '[batch, T.Numel shape])
 flatten = lens fwd rev
   where
-    b = natValI @batch
-    flat = natValI @(T.Product shape)
-    dims = T.shapeVal @shape -- runtime shape for rev reshape
-    fwd x = UnsafeMkTensor $ U.reshape [b, flat] (toDynamic x) -- use -1 here to save the flat?
-    rev _ g = UnsafeMkTensor $ U.reshape (b : dims) (toDynamic g)
+    fwd = T.reshape @'[batch, T.Numel shape]
+    rev _ = T.reshape @(batch : shape)
 {-# INLINE flatten #-}

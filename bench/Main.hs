@@ -55,6 +55,25 @@ main = do
             nf test (someInput, params),
           bench "typed-hasktorch-handroll" $
             nf handRolledTest (someInput, params)
+        ],
+      -- Overhead isolation: measures individual contributors to the dynamic epoch cost.
+      --   fold-foldM      baseline (same as epoch/dynamic-hasktorch)
+      --   fold-foldl'     replaces foldM with explicit foldl' chain; diff = fold-structure overhead
+      --   forward-only    no runStep at all; diff from baseline = backward + flattenParams + update
+      --   flattenParams   Generic traversal alone x18; diff from forward-only ~ traversal share
+      bgroup
+        "overhead-breakdown"
+        [ bench "fold-foldM" $
+            nfIO $
+              HT.irisEpoch initTorch GD htIrisTargets,
+          bench "fold-foldl'" $
+            nfIO $
+              HT.irisEpochFoldl initTorch GD htIrisTargets,
+          bench "forward-only" $
+            nfIO $
+              HT.irisEpochForwardOnly initTorch htIrisTargets,
+          bench "flattenParams-x18" $
+            nf (\() -> map (const (flattenParameters initTorch)) htIrisTargets) ()
         ]--,
       -- bgroup
       --   "predict"

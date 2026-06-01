@@ -23,7 +23,7 @@ play as nice with the lens library
 -- type ParaLens p p' a a' b b' = forall q q' . Lens (p,a,q) (p',a',q') (b,q) (b',q')
 
 type ParaLens p p' a a' b b' = Lens (p,a) (p',a') b b'
-type ParaLens' p a b = ParaLens p p a a b b
+type ParaLens' p a b = Lens' (p,a) b
 
 -- ParaLens p p' a a' b b
 -- Lens (p,a) (p',a') b b'
@@ -31,7 +31,7 @@ type ParaLens' p a b = ParaLens p p a a b b
 -- f* :: (p,a) -> b' -> (p',a')
 
 type ParaIso p p' a a' b b' = Iso (p,a) (p',a') b b'
-type ParaIso' p a b = ParaIso p p a a b b
+type ParaIso' p a b = Iso' (p,a) b
 
 {-
 alongside gives the monoidal product
