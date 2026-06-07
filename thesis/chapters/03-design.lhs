@@ -233,13 +233,45 @@ box unchanged:
 \begin{figure}[h]
 \centering
 \begin{tikzpicture}
-  \node[paralens, minimum width=2cm] (box) {$l$};
-  \draw[wire] (-2.5,  0.3) -- node[above] {$a$} ($(box.west)+(0, 0.3)$);
-  \draw[wire] (-2.5, -0.3) -- node[below] {$p$} ($(box.west)+(0,-0.3)$);
-  \draw[wire] ($(box.east)+(0, 0.3)$) -- node[above] {$a$} (2.5,  0.3);
-  \draw[wire] ($(box.east)+(0,-0.3)$) -- node[below] {$q$} (2.5, -0.3);
+  %% Outer box (rightLens l as a whole)
+  %% Symmetric 0.4 gaps: top(1.8)-a(1.4)-a'(1.0)-[id/l gap]-p(0.2)-p'(-0.2)-bottom(-0.6)
+  \draw[thick] (-2.5, -0.6) rectangle (2.5, 1.8);
+
+  %% l box (lower section)
+  \node[paralens, minimum width=1.4cm, minimum height=0.9cm] (box) at (0, 0) {$l$};
+
+  %% id box (upper section, dotted): centre 1.2, half-height 0.45 → spans [0.75, 1.65]
+  %% wires at 1.2±0.2 = 1.4 and 1.0, both well inside the box with label room to spare
+  \node[draw, dotted, thick, minimum width=1.4cm, minimum height=0.9cm] (id) at (0, 1.2) {};
+
+  %% a forward: labeled external stub, straight through id, labeled external stub
+  \draw[wire] (-4.0,  1.4) -- node[above] {$a$}  (-2.5,  1.4);
+  \draw[wire] (-2.5,  1.4) -- ( 2.5,  1.4);
+  \draw[wire] ( 2.5,  1.4) -- node[above] {$a$} ( 4.0,  1.4);
+
+  %% a' backward: labels shifted outward (pos=0.25) to clear the p/q labels below
+  \draw[wire] ( 4.0,  1.0) -- node[below, pos=0.35] {$a'$} ( 2.5,  1.0);
+  \draw[wire] ( 2.5,  1.0) -- (-2.5,  1.0);
+  \draw[wire] (-2.5,  1.0) -- node[below, pos=0.65] {$a'$} (-4.0,  1.0);
+
+  %% p: label shifted inward (pos=0.75) to clear the a' label above
+  \draw[wire] (-4.0,  0.2) -- node[above, pos=0.65] {$p$}  (-2.5,  0.2);
+  \draw[wire] (-2.5,  0.2) -- ($(box.west)+(0,  0.2)$);
+
+  %% p': internal from l, labeled external stub
+  \draw[wire] ($(box.west)+(0, -0.2)$) --           (-2.5, -0.2);
+  \draw[wire] (-2.5, -0.2) -- node[below] {$p'$} (-4.0, -0.2);
+
+  %% q: label shifted inward (pos=0.25) to clear the a' label above
+  \draw[wire] ($(box.east)+(0,  0.2)$) --           ( 2.5,  0.2);
+  \draw[wire] ( 2.5,  0.2) -- node[above, pos=0.35] {$q$}  ( 4.0,  0.2);
+
+  %% q': labeled external stub, internal to l
+  \draw[wire] ( 4.0, -0.2) -- node[below] {$q'$} ( 2.5, -0.2);
+  \draw[wire] ( 2.5, -0.2) -- ($(box.east)+(0, -0.2)$);
 \end{tikzpicture}
-\caption{|rightLens l| passes wire $a$ straight through while $l$ transforms $p \to q$.}
+\caption{|rightLens l| (outer box): $\mathrm{id}$ passes $a$ and $a'$
+  through unchanged, while $l$ transforms $p \to q$ forward and $q' \to p'$ backward.}
 \label{fig:rightlens}
 \end{figure}
 

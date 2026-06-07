@@ -17,6 +17,7 @@
 %% ─────────────────────────────────────────────────────────────────────────────
 
 \section{Lenses and Optics}
+\label{sec:lenses}
 
 Compound data structures are ubiquitous in modern programming, and their
 inherent modularity is key to building and reasoning with complex ensembles.

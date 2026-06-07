@@ -103,9 +103,9 @@ representation
 \]
 is specialised at the call site.  The forward pass (|runFullModel|)
 instantiates $f = \mathtt{Const}\;b$, for which
-$\mathtt{fmap} = \mathtt{const}$, collapsing every lens in the chain
+|fmap = flip const|, collapsing every lens in the chain
 to its getter.  The backward pass instantiates $f = \mathtt{Identity}$,
-for which $\mathtt{fmap} = \mathtt{id}$, collapsing to the setter--getter
+for which |fmap = coerce|, collapsing to the setter--getter
 chain.  In both cases the |forall f| disappears and all intermediate
 |fmap| calls and |(,)| wrappers reduce to their concrete definitions.
 Second, the |{-# INLINE #-}| pragmas on |(.#.)|, |repara|, |stackN|,
@@ -252,7 +252,7 @@ Precision       & Epochs to 95\% accuracy & Training time (s) \\
 \bottomrule
 \end{tabular}
 \caption{Iris classification: convergence and wall-clock time by
-  floating-point precision, CPU.  Results to be filled in.}
+  floating-point precision, CPU.  TODO: Fill in results!}
 \label{tab:iris-perf}
 \end{table}
 

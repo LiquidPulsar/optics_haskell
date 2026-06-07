@@ -1,38 +1,13 @@
 %include polycode.fmt
 
-% %if False
-% \begin{code}
-% module Introduction where
-% \end{code}
-% %endif
-
-% \chapter{Introduction}
-
-% This thesis explores \ldots
-
-% @|mergeSort [5, 2, 7, 3]|@
-
-% \section{Motivation}
-
-% > mergeSort :: (Ord a) => [a] -> [a]
-% > mergeSort [] = []
-% > mergeSort [x] = [x]
-% > mergeSort xs = merge (mergeSort left) (mergeSort right)
-% >   where
-% >     (left, right) = splitAt (length xs `div` 2) xs
-
-% Now, @|f (sqrt (a + b))|@ results in |f (sqrt (a + b))| and @|f (pair
-% (a + b) c)|@ in |f (pair (a + b) c)|. The format directive for @power@
-% shows that it is not always safe to drop parenthesis. If @a@ were in
-% parenthesis as well, @power (a + b) 3@ would result in ${\Varid{a} +
-% \Varid{b}}^{3}$.
-
-% \section{Contributions}
-
-% \section{Outline}
-
-% The remainder of this thesis is structured as follows.
-% Chapter~\ref{chap:background} covers \ldots
+%% ── Format directives ────────────────────────────────────────────────────────
+%format ->    = "\to"
+%format =>    = "\Rightarrow"
+%format forall = "\forall"
+%format .#.   = "\mathbin{\bullet}"
+%format ***   = "\mathbin{\times}"
+%format <$>   = "\mathbin{\langle\$\rangle}"
+%% ─────────────────────────────────────────────────────────────────────────────
 
 \chapter{Introduction}
 
@@ -116,12 +91,12 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
     Constraint synonyms prevent invalid device/dtype combinations from
     type-checking.
 
-  \item \textbf{Convolutional and pooling architectures.}
-    The Cruttwell et al.\ framework is extended beyond dense layers to
-    include convolutions and max-pooling.  Convolution output shapes
-    (kernel size, stride, and padding are all type-level tuples) are
-    inferred by type families, so architectural mismatches are
-    compile-time errors.
+  % \item \textbf{Convolutional and pooling architectures.}
+  %   The Cruttwell et al.\ framework is extended beyond dense layers to
+  %   include convolutions and max-pooling.  Convolution output shapes
+  %   (kernel size, stride, and padding are all type-level tuples) are
+  %   inferred by type families, so architectural mismatches are
+  %   compile-time errors.
 
   \item \textbf{Type-level variable network depth.}
     The \texttt{Stack.hs} module uses type-level Peano naturals and
@@ -131,13 +106,13 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
     structure, yielding zero overhead relative to a hand-written
     network of the same depth.
 
-  \item \textbf{Per-layer optimisers via the product type.}
-    Because the composition operator \texttt{(.{}\#{}.)} builds the
-    combined parameter type as a product, different layers can carry
-    different optimiser states (momentum buffer, gradient accumulator,
-    Adam moments) with no global optimiser object and no explicit
-    parameter grouping.  The type system enforces that each layer's
-    update rule is local.
+  % \item \textbf{Per-layer optimisers via the product type.}
+  %   Because the composition operator \texttt{(.{}\#{}.)} builds the
+  %   combined parameter type as a product, different layers can carry
+  %   different optimiser states (momentum buffer, gradient accumulator,
+  %   Adam moments) with no global optimiser object and no explicit
+  %   parameter grouping.  The type system enforces that each layer's
+  %   update rule is local.
 
   \item \textbf{Zero-overhead evidence via GHC Core.}
     Compiling the lens-based forward pass and an equivalent
@@ -156,7 +131,7 @@ Haskell's type system, optics (including the van Laarhoven lens
 representation), gradient-based learning, and Cartesian Reverse
 Differential Categories.
 Chapter~\ref{chap:core} defines the \texttt{ParaLens} type, its
-composition operator \texttt{(.{}\#{}.)} and the \texttt{repara}
+composition operator (|.#.|) and the \texttt{repara}
 combinator.
 Chapters~\ref{chap:layers}, \ref{chap:loss}, and \ref{chap:optim}
 describe the library's layers, loss functions, and optimisers

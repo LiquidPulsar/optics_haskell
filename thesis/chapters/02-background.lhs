@@ -40,6 +40,11 @@ compositional by default---the behaviour of a composition |f . g| is
 fully determined by the behaviours of |f| and |g| individually---which
 is the property the framework exploits to build large networks from
 small verified components.
+Five advanced type-system features support the framework: type classes for
+overloaded interfaces; the kind system and |DataKinds| for lifting tensor
+shapes to the type level; type families for computing output shapes at
+compile time; higher-rank polymorphism for composable lenses; and constraint
+synonyms for keeping signatures readable.
 
 \subsection*{Type Classes}
 
@@ -49,10 +54,15 @@ declares an interface; instances provide concrete implementations:
 \begin{code}
 class Functor f where
     fmap :: (a -> b) -> f a -> f b
+
+instance Functor Maybe where
+    fmap f (Just x)  = Just (f x)
+    fmap _ Nothing   = Nothing
 \end{code}
 
-\noindent Type class resolution is purely compile-time: there is no
-dynamic dispatch.  This means that when |fmap| is specialised to a
+\noindent In ordinary use, type class resolution is purely compile-time:
+GHC selects the appropriate instance and may inline it, leaving no dispatch
+overhead at runtime.  This means that when |fmap| is specialised to a
 concrete |f|, GHC can inline the specific implementation and optimise
 it away.  This property is crucial in Section~\ref{sec:zero-overhead}
 where the entire lens abstraction is shown to vanish in the compiled
@@ -68,11 +78,10 @@ argument before producing a concrete type.
 The |{-# LANGUAGE DataKinds #-}| extension promotes value-level data
 constructors to the type level.  The standard natural numbers, for
 instance, are promoted to kind |Nat|, and lists of naturals to kind
-|[Nat]|.  The typed tensor library Hasktorch exploits this directly:
+|[Nat]|.  The typed tensor library Hasktorch exploits this directly: a tensor on
+device |dv|, with element type |dt|, and shape |[m, n]| is written:
 
 \begin{code}
--- A rank-2 tensor on device dv, with element type dt,
--- holding a matrix of m rows and n columns:
 example :: T.Tensor dv dt [m, n]
 \end{code}
 
@@ -87,7 +96,7 @@ batch sizes |[b, d]| are all compile-time entities.
 \subsection*{Type Families}
 
 A \emph{type family} is a type-level function computed by the
-compiler.  The |{-# LANGUAGE TypeFamilies #-}| extension enables
+compiler. \newline The |{-# LANGUAGE TypeFamilies #-}| extension enables
 pattern-matching on types in closed equations:
 
 \begin{code}
@@ -149,14 +158,9 @@ supplied.
 \label{sec:optics-bg}
 
 An \emph{optic} is a composable interface for accessing and modifying
-a sub-component of a data structure.  The framework's full theory of
-optics occupies Section~\ref{sec:lenses} of this chapter; this section
-provides the intuition needed to follow the design.
-
-\subsection*{The Concrete Lens}
-
-The simplest optic is a \emph{lens}, which focuses on a single
-sub-component.  Concretely, a lens is a pair of functions:
+a sub-component of a data structure.  The simplest optic is a
+\emph{lens}, which focuses on a single sub-component.  Concretely, a
+lens is a getter paired with a setter:
 
 \begin{code}
 data Lens s a = Lens
@@ -164,54 +168,16 @@ data Lens s a = Lens
   , set  :: s -> a -> s }
 \end{code}
 
-\noindent |view| retrieves the focused value; |set| replaces it.  This
-representation is straightforward but does not compose directly:
-chaining two lenses requires manually threading the getter and setter
-functions, producing boilerplate that grows with nesting depth.
-
-\subsection*{The Van Laarhoven Representation}
-
-Van Laarhoven~\citep{van2009lens} showed that both operations can be
-unified into a single higher-rank function.  The full \emph{polymorphic
-lens} type is:
-
-\begin{code}
-type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
-\end{code}
-
-\noindent where |s| is the source type, |t| the updated source, |a|
-the focused value, and |b| its replacement.  The |forall f| is the
-key: the choice of functor determines which operation is performed.
-\begin{itemize}
-  \item \textbf{Viewing:} with $f = \mathtt{Const}\;a$,
-    $\mathtt{fmap} = \mathtt{const}$, the chain collapses to $s \to
-    a$.
-  \item \textbf{Setting:} with $f = \mathtt{Identity}$,
-    $\mathtt{fmap} = \mathtt{id}$, the chain collapses to $(s, b) \to
-    t$.
-\end{itemize}
-\noindent Because a van Laarhoven lens is simply a function of type
-|(a -> f b) -> s -> f t|, two lenses |l1 :: Lens s t a b| and
-|l2 :: Lens a b c d| compose by ordinary function composition:
-\[
-  \mathtt{l1\;.\;l2\;::\;Lens\;s\;t\;c\;d}.
-\]
-This composability is the central reason lenses are used throughout the
-framework.  The |lens| library~\citep{ekmett2025lens} provides hundreds
-of lenses for standard data structures that compose freely via |(.|).
-
-\subsection*{Lens Laws}
-
-A well-formed lens satisfies three equational laws:
-\begin{enumerate}
-  \item \textbf{Get-put:} |set s (view s) = s|.
-  \item \textbf{Put-get:} |view (set s b) = b|.
-  \item \textbf{Put-put:} |set (set s b) b' = set s b'|.
-\end{enumerate}
-\noindent These ensure the focused sub-component is genuinely
-independent of the rest of the structure.  All lenses in this
-framework are constructed from primitives that satisfy the laws
-structurally.
+\noindent This representation is straightforward but does not compose
+directly: chaining two lenses requires manually threading the getter
+and setter, producing boilerplate that grows with nesting depth.
+Van Laarhoven~\citep{van2009lens} showed that encoding both operations
+as a single higher-rank function eliminates this problem---two lenses
+then compose by plain function composition |(.)| with no glue code.
+The central reason lenses appear throughout the framework is precisely
+this composability.  The full derivation, including the |Identity| and
+|Const| functor trick, the polymorphic generalisation, and the lens
+laws, is given in Section~\ref{sec:lenses}.
 
 \section{Neural Networks and Gradient-Based Learning}
 \label{sec:nn-bg}
@@ -274,7 +240,7 @@ type error rather than a silent shape broadcast.
 
 The theoretical foundation for backpropagation in this framework is the
 notion of a \emph{Cartesian Reverse Differential Category}
-(CRDC)~\citep{cruttwell2022}.  CRDCs provide an axiomatic account of
+(CRDC)~\citep{catlearning}.  CRDCs provide an axiomatic account of
 reverse-mode automatic differentiation that is independent of any
 particular programming language or number system.
 
@@ -304,17 +270,26 @@ is required to switch between the two modes.
 \subsection*{Cruttwell et al., 2022}
 
 The categorical foundations of the framework are due to Cruttwell
-et al.~\citep{cruttwell2022}, who showed that gradient-based learning
+et al.~\citep{catlearning}, who showed that gradient-based learning
 is naturally modelled as composition in a category $\mathbf{Para}(C)$
 of parametric morphisms over a CRDC $C$.  They define parametric
-lenses, the composition rule $(-.-)$, and the connection between
+lenses, the composition rule, and the connection between
 backpropagation and the CRDC reverse derivative, and demonstrate the
 framework on small MLP examples.
 
 The accompanying implementation is intentionally minimal: it is
 dynamically typed, operates on single examples rather than batches, and
-covers only dense layers.  The present work instantiates the same
-categorical structure in Haskell, contributing: statically typed tensor
+covers only dense layers.  
+
+Importantly, the implementation in Python (whilst a natural choice for ease of development) 
+does not fulfil the original intentions of the lens design in terms of efficient composition. 
+Python imposes significant overhead due to the additional function calls required for composing 
+our lenses, which cannot be optimised out.
+
+Haskell offers far better support for lenses: thanks to its optimising compiler and powerful type 
+reasoning capabilities we can eliminate all overhead vs hand-written code.
+The present work instantiates the prior categorical structure in Haskell, 
+contributing: statically typed tensor
 shapes via DataKinds; device and dtype polymorphism; batching as a
 type-level parameter; convolutional and pooling architectures; and
 zero-overhead evidence via GHC Core.  These contributions are discussed

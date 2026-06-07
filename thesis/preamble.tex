@@ -1,3 +1,13 @@
+\usepackage[
+  backend=biber,
+  style=vancouver,
+  natbib=true
+]{biblatex}
+\addbibresource{references.bib}
+
+% --- amsthm must load before newtxmath (which lhs2tex-preamble pulls in) ---
+\usepackage{amsthm}
+
 % --- lhs2tex bootstrap (must come first) ---
 % Fires the ReadOnlyOnce blocks in the preamble so \usepackage calls inside
 % generated chapter files are suppressed when \include'd after \begin{document}.
@@ -10,9 +20,9 @@
 
 % --- Math & symbols ---
 \usepackage{amsmath}
+\let\Bbbk\relax            % newtxmath (via lhs2tex) already defines \Bbbk
 \usepackage{amssymb}
-\usepackage{amsthm}
-\usepackage{stmaryrd}     % semantic brackets [| |], used in PL/type theory
+% stmaryrd already loaded by lhs2tex's polycode.fmt
 
 % --- Theorems ---
 \newtheorem{theorem}{Theorem}[chapter]
@@ -44,5 +54,4 @@
 }
 
 % --- References & links (load last) ---
-\usepackage{natbib}
 \usepackage[hidelinks]{hyperref}

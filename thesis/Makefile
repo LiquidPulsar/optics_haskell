@@ -5,8 +5,12 @@ LHS2TEX  := lhs2TeX
 LATEXMK  := latexmk
 PDFFLAGS := -pdf -interaction=nonstopmode
 
-# Ensure lhs2tex can find its format files
-export LHS2TEXINPUTS := /usr/share/lhs2tex-1.24:
+# On Linux, lhs2tex is typically installed via a system package to /usr/share/lhs2tex-*.
+# On macOS, cabal-installed lhs2tex bakes in its own data path, so no override is needed.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+export LHS2TEXINPUTS := $(shell ls -d /usr/share/lhs2tex-* 2>/dev/null | head -1):
+endif
 
 .PHONY: all clean watch
 

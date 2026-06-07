@@ -330,7 +330,6 @@ testIrisTrainStepEquiv = do
 -------------------------
 -- testIrisEpochEquiv
 -- Full epoch (18 batches) from identical init → same final params?
--- Expected: FAIL — same 2/N discrepancy, accumulated over all batches.
 -------------------------
 
 testIrisEpochEquiv :: IO [Bool]

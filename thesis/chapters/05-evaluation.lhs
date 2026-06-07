@@ -47,7 +47,7 @@ compared at depth $n = 1$:
     lens composition; LibTorch is called only for primitive tensor operations
     (|matmul|, |add|, |sigmoid|).
 
-  \item[\texttt{hmatrix}]  A reference implementation using the HMatrix
+  \item[\texttt{hmatrix}]  A second (non-static) lens-based implementation using the HMatrix
     library, which wraps LAPACK and BLAS directly.  The forward and backward
     passes are also pure Haskell, but the tensor backend is LAPACK rather than
     LibTorch.
@@ -56,7 +56,7 @@ compared at depth $n = 1$:
     and backward passes to PyTorch's autograd engine, using |Torch| dynamic
     tensors.  Each gradient step calls |runStep|, which invokes
     |flattenParameters|, calls LibTorch's~|.backward()|, and applies the
-    optimizer update.
+    optimiser update.
 \end{description}
 
 Two microbenchmarks are reported:
@@ -110,7 +110,7 @@ Variant & Mean time & Diff.\ from baseline & Overhead identified \\
 \end{tabular}
 \caption{Overhead isolation for one dynamic epoch.  The \texttt{forward-only} variant
   runs the full forward pass (including autograd graph construction) but never calls
-  \texttt{.backward()}.  Std devs: fold variants $<1\%$, \texttt{forward-only} 4\%.}
+  \texttt{\char46 backward()}.  Std devs: fold variants $<1\%$, \texttt{forward-only} 4\%.}
 \label{tab:overhead}
 \end{table}
 
@@ -118,11 +118,11 @@ Variant & Mean time & Diff.\ from baseline & Overhead identified \\
 
 \subsection*{Zero-overhead abstraction (raw\_fwd)}
 
-The |typed-hasktorch| forward pass (7.1~$\mu$s) is statistically
+The \texttt{typed-hasktorch} forward pass (7.1~$\mu$s) is statistically
 indistinguishable from the hand-rolled implementation (6.9~$\mu$s), a ratio
 of 0.97.  This confirms the claim established by the GHC Core analysis in
-Section~\ref{sec:iris}: the lens machinery---|(.#.)|, |alongside|, |swapFst|,
-|rotate|, all tuple constructors---is entirely absent from the optimised
+Section~\ref{sec:iris}: the lens machinery (namely |(.#.)|, |alongside|, |swapFst|,
+|rotate|, all tuple constructors) is entirely absent from the optimised
 output.  The user writes four lines of lens composition; GHC emits the same
 LibTorch call sequence as the hand-written version.
 
@@ -145,7 +145,7 @@ story.
 \paragraph{PyTorch backward pass: 93\% of the cost.}
 The \texttt{forward-only} variant runs the full forward pass for every
 mini-batch---including autograd graph construction, since the model parameters
-carry |requires\_grad=True|---but never calls |.backward()|.  It completes in
+carry |requires_grad=True|---but never calls |.backward()|.  It completes in
 $251\;\mu$s.  The full epoch (3{,}631~$\mu$s) costs $3{,}381\;\mu$s more:
 \textbf{93\%} of the total epoch time is spent inside PyTorch's C++ backward
 pass.  This is the dominant and non-negotiable cost of delegating
@@ -176,11 +176,14 @@ a network of this size.
 
 The HMatrix baseline (388~$\mu$s) is \textbf{1.7$\times$ faster} than the
 typed lens implementation (649~$\mu$s) on Iris.  This is expected: HMatrix
-calls LAPACK and BLAS directly and incurs lower per-call overhead than
-LibTorch for very small matrices.  The $4\times4$ and $3\times4$ weight
-matrices used by the Iris model are far below the crossover point where
-LibTorch's GPU-oriented kernel dispatch becomes efficient; LAPACK's
-optimised small-matrix paths have lower fixed cost.
+calls LAPACK and BLAS directly~\cite{hmatrix} and incurs lower per-call
+overhead than LibTorch for very small matrices.  Every LibTorch tensor
+operation passes through ATen's multi-device operator dispatch---type and
+device checking before the underlying BLAS kernel is reached~\cite{paszke2019pytorch}---a
+fixed cost that dominates computation for $4\times4$ matrices.  These sizes
+are far below the crossover point at which dispatch overhead becomes negligible
+relative to computation; the small-matrix performance regime is well-studied
+in the linear algebra literature~\cite{frison2020blasfeo}.
 
 Both implementations perform the backward pass in pure Haskell; the per-call
 FFI cost is the sole driver of the gap.  For problems with larger matrices or
@@ -200,6 +203,5 @@ At the integration level, the Iris forward pass is verified to be
 bit-for-bit identical between the typed and dynamic implementations: given
 the same weight initialisation, |irisPredict| and the hand-written
 |irisModel| produce the same output tensor to within |Float| rounding.  The
-single-step and full-epoch parameter updates are likewise verified to agree
-once the MSE backward is correctly normalised by $\tfrac{2}{N}$
-(Section~\ref{sec:mse}).  All three integration checks pass.
+single-step and full-epoch parameter updates are likewise verified to agree.  
+All three integration checks pass.

@@ -96,7 +96,7 @@ $p \leftarrow p + \partial p$; the cap supplies the sign and magnitude.
 \section{The Gradient Scaling Convention}
 \label{sec:lossscaling}
 
-In a cartesian reverse differential category (CRDC)~\cite{cruttwell2022},
+In a cartesian reverse differential category (CRDC)~\cite{catlearning},
 every object |A| is equipped with a natural addition $A \times A \to A$
 arising from its abelian group structure.  The training loop performs
 precisely this addition:
