@@ -66,7 +66,7 @@ lossSmooth = lens fwd (flip rev')
 softMaxCELoss ::
   forall t x c dv dt.
   ( t ~ T.Tensor dv dt,
-    T.All KnownNat '[x, c],
+    T.All KnownNat [x, c],
     T.AllDimsPositive '[x],
     T.BasicArithmeticDTypeIsValid dv dt,
     T.StandardFloatingPointDTypeValidation dv dt,
@@ -76,16 +76,16 @@ softMaxCELoss ::
     T.SumDTypeIsValid dv dt, 
     T.MeanDTypeValidation dv dt
   ) =>
-  ParaLens' (t '[x, c]) (t '[x, c]) (t '[])
+  ParaLens' (t [x, c]) (t [x, c]) (t '[])
 softMaxCELoss = lens fwd rev
   where
-    fwd :: (t '[x, c], t '[x, c]) -> t '[]
+    fwd :: (t [x, c], t [x, c]) -> t '[]
     fwd (bt, bp) = negate . T.meanAll . T.sumDim @1 $ bt * T.logSoftmax @1 bp
 
-    rev :: (t '[x, c], t '[x, c]) -> t '[] -> (t '[x, c], t '[x, c])
+    rev :: (t [x, c], t [x, c]) -> t '[] -> (t [x, c], t [x, c])
     rev (bt, bp) d = (T.mul d $ negate $ T.log q, T.mul d $ q - bt)
       where
-        q = T.softmax @1 bp   -- '[x,c], sums to 1 over class dim
+        q = T.softmax @1 bp   -- [x,c], sums to 1 over class dim
 
 deepDreamLoss ::
   forall t shape dv dt.

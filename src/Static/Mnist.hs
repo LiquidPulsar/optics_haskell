@@ -25,7 +25,6 @@ import Static.Layers
 import Static.Loss
 import Static.Optim
 import Models
-import Stack (RandInit(randInit))
 
 import System.Mem (performMajorGC)
 import GHC.Stats (getRTSStats, gcdetails_live_bytes, gc)
@@ -40,9 +39,11 @@ memStats = do
   let liveBytes = gcdetails_live_bytes (gc rts)
   -- ATen tensor memory (not visible to GHC) — read from /proc
   status <- readFile "/proc/self/status"
-  let rss = head [ w | l <- lines status
+  let rss = case [ w | l <- lines status
                      , "VmRSS" `isPrefixOf` l
-                     , w <- words l, all isDigit w ]
+                     , w <- words l, all isDigit w ] of
+              (r:_) -> r
+              []    -> "unknown"
   putStrLn $ "GHC live: " <> show (liveBytes `div` 1024) <> " KB"
            <> "  RSS: " <> rss <> " kB"
 
@@ -59,8 +60,8 @@ type NumTrain  = 6000--0
 type NumTest   = 1000--0
 
 -- Conv layers carry only a kernel (no bias — kept separate to match HMatrix style)
-type Conv1K dev dt = Tensor dev dt '[3, 1, 3, 3]
-type Conv2K dev dt = Tensor dev dt '[5, 3, 4, 4]
+type Conv1K dev dt = Tensor dev dt [3, 1, 3, 3]
+type Conv2K dev dt = Tensor dev dt [5, 3, 4, 4]
 type DenseP dev dt = MMP dev dt 10 125
 type MnistP dev dt = (Conv1K dev dt, (Conv2K dev dt, DenseP dev dt))
 
@@ -83,8 +84,8 @@ batchesOf ::
   ( KnownNat b
   , KnownNat n
   ) =>
-  Tensor dev dt (n ': shape) ->
-  [Tensor dev dt (b ': shape)]
+  Tensor dev dt (n : shape) ->
+  [Tensor dev dt (b : shape)]
 batchesOf t =
   [ UnsafeMkTensor $ I.narrow_tlll (toDynamic t) 0 (i * b') b'
   | i <- [0 .. (n' `div` b') - 1] ]
@@ -101,13 +102,13 @@ mnistModel ::
   , SaneMnist dev dt
   ) =>
   ParaLens'
-    (Inp (t '[b, 1, 28, 28]), MnistP dev dt)
+    (Inp (t [b, 1, 28, 28]), MnistP dev dt)
     ()
-    (Out (t '[b, 10]))
+    (Out (t [b, 10]))
 mnistModel = argToPara -- 28
   .#. withGradDesc convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 13
   .#. withGradDesc convLens . relu . maxPool @'(2, 2) @'(2, 2) @'(0, 0) -- 5
-  .#. rightLens (flatten @b @'[5, 5, 5]) . matMulLens
+  .#. rightLens (flatten @b @[5, 5, 5]) . matMulLens
 
 mnistModelLoss ::
   forall b dev dt t.
@@ -117,7 +118,7 @@ mnistModelLoss ::
   , SaneMnist dev dt
   ) =>
   ParaLens'
-    ((Inp (t '[b, 1, 28, 28]), MnistP dev dt), Tgt (t '[b, 10]))
+    ((Inp (t [b, 1, 28, 28]), MnistP dev dt), Tgt (t [b, 10]))
     ()
     (Out (t '[]))
 mnistModelLoss = mnistModel .#. softMaxCELoss
@@ -130,7 +131,7 @@ mnistModel' ::
   , SaneMnist dev dt
   ) =>
   ParaLens'
-    ((Inp (t '[b, 1, 28, 28]), MnistP dev dt), Tgt (t '[b, 10]))
+    ((Inp (t [b, 1, 28, 28]), MnistP dev dt), Tgt (t [b, 10]))
     ()
     ()
 mnistModel' = mnistModel .#. softMaxCELoss . lrSmooth 1e-4
@@ -166,7 +167,7 @@ loadMnist ::
   ) =>
   FilePath ->
   FilePath ->
-  IO (Tensor dev dt '[n, 1, 28, 28], Tensor dev dt '[n, 10])
+  IO (Tensor dev dt [n, 1, 28, 28], Tensor dev dt [n, 10])
 loadMnist imgPath lblPath = do
   Just imgs <- decodeIDXFile imgPath
   Just lbls <- decodeIDXLabelsFile lblPath
@@ -190,10 +191,10 @@ loadMnist imgPath lblPath = do
 
 mnistTargets ::
   KnownNat n =>
-  Tensor dev dt '[n, 1, 28, 28] ->
-  Tensor dev dt '[n, 10] ->
-  [( Tensor dev dt '[BatchSize, 1, 28, 28]
-   , Tensor dev dt '[BatchSize, 10] )]
+  Tensor dev dt [n, 1, 28, 28] ->
+  Tensor dev dt [n, 10] ->
+  [( Tensor dev dt [BatchSize, 1, 28, 28]
+   , Tensor dev dt [BatchSize, 10] )]
 mnistTargets imgs lbls =
   zip (batchesOf @BatchSize imgs) (batchesOf @BatchSize lbls)
 
@@ -202,8 +203,8 @@ mnistTargets imgs lbls =
 mnistEpoch ::
   forall dev dt.
   SaneMnist dev dt =>
-  [( Tensor dev dt '[BatchSize, 1, 28, 28]
-   , Tensor dev dt '[BatchSize, 10] )] ->
+  [( Tensor dev dt [BatchSize, 1, 28, 28]
+   , Tensor dev dt [BatchSize, 10] )] ->
   MnistP dev dt ->
   MnistP dev dt
 mnistEpoch = flip (trainMany mnistModel')
@@ -216,7 +217,7 @@ mnistPredict ::
   , T.StandardDTypeValidation dev dt
   ) =>
   MnistP dev dt ->
-  t '[b, 1, 28, 28] ->
+  t [b, 1, 28, 28] ->
   [Int]
 mnistPredict p x =
   U.asValue . toDynamic $
@@ -228,8 +229,8 @@ mnistAccuracy ::
   , T.StandardDTypeValidation dev dt
   ) =>
   MnistP dev dt ->
-  [( Tensor dev dt '[BatchSize, 1, 28, 28]
-   , Tensor dev dt '[BatchSize, 10] )] ->
+  [( Tensor dev dt [BatchSize, 1, 28, 28]
+   , Tensor dev dt [BatchSize, 10] )] ->
   Double
 mnistAccuracy p targets = fromIntegral correct / fromIntegral total
   where
@@ -248,8 +249,8 @@ mnistDiagnose ::
   , T.StandardDTypeValidation dev dt
   ) =>
   MnistP dev dt ->
-  [( Tensor dev dt '[BatchSize, 1, 28, 28]
-   , Tensor dev dt '[BatchSize, 10] )] ->
+  [( Tensor dev dt [BatchSize, 1, 28, 28]
+   , Tensor dev dt [BatchSize, 10] )] ->
   IO ()
 mnistDiagnose p testT = do
   -- Prediction class histogram

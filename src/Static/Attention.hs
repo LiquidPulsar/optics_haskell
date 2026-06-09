@@ -110,7 +110,7 @@ selfAttention = lens fwd rev
 multiHeadSelfAttention ::
   forall b s e h hd dev dt t.
   ( t ~ Tensor dev dt
-  , T.All KnownNat '[b, s, e, h, hd]
+  , T.All KnownNat [b, s, e, h, hd]
   , e ~ h * hd
   , T.MatMulDTypeIsValid dev dt
   , T.BasicArithmeticDTypeIsValid dev dt
@@ -119,9 +119,9 @@ multiHeadSelfAttention ::
   , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
   , KnownNat (b * s)
   , (b * (s * e)) ~ ((b * s) * e)              -- wGrad reshape
-  , T.Numel '[b, s, e] ~ T.Numel '[b, s, h, hd] -- splitHeads reshape
+  , T.Numel [b, s, e] ~ T.Numel [b, s, h, hd] -- splitHeads reshape
   ) =>
-  ParaLens' (SelfAttnP dev dt e) (t '[b, s, e]) (t '[b, s, e])
+  ParaLens' (SelfAttnP dev dt e) (t [b, s, e]) (t [b, s, e])
 multiHeadSelfAttention = lens fwd rev
   where
     scale  = 1.0 / sqrt (fromIntegral (natValI @hd)) :: Double  -- hd not e
@@ -130,24 +130,24 @@ multiHeadSelfAttention = lens fwd rev
     proj w x = T.matmul x (T.transpose @0 @1 w)
 
     -- [b, s, e] <-> [b, h, s, hd]
-    splitHeads :: t '[b, s, e]    -> t '[b, h, s, hd]
+    splitHeads :: t [b, s, e]    -> t [b, h, s, hd]
     splitHeads  = T.transpose @1 @2 . T.reshape @'[b, s, h, hd]
-    mergeHeads :: t '[b, h, s, hd] -> t '[b, s, e]
+    mergeHeads :: t [b, h, s, hd] -> t [b, s, e]
     mergeHeads  = T.reshape @'[b, s, e] . T.transpose @1 @2
 
     -- 4D helpers (extra h dim)
-    mmH :: t '[b, h, s1, n] -> t '[b, h, n, s2] -> t '[b, h, s1, s2]
+    mmH :: t [b, h, s1, n] -> t [b, h, n, s2] -> t [b, h, s1, s2]
     mmH = T.matmul
-    trH :: t '[b, h, x, y] -> t '[b, h, y, x]
+    trH :: t [b, h, x, y] -> t [b, h, y, x]
     trH = T.transpose @2 @3
-    scaleH :: t '[b, h, s, hd] -> t '[b, h, s, hd]
+    scaleH :: t [b, h, s, hd] -> t [b, h, s, hd]
     scaleH = T.mulScalar scaleF
 
-    softmaxBwdH :: t '[b, h, s, s] -> t '[b, h, s, s] -> t '[b, h, s, s]
+    softmaxBwdH :: t [b, h, s, s] -> t [b, h, s, s] -> t [b, h, s, s]
     softmaxBwdH w dw = w * T.sub dw dot
       where dot = T.reshape @'[b, h, s, 1] $ T.sumDim @3 (w * dw)  -- dim 3, not 2
 
-    wGrad :: t '[b, s, e] -> t '[b, s, e] -> t '[e, e]
+    wGrad :: t [b, s, e] -> t [b, s, e] -> t [e, e]
     wGrad x dY = T.matmul (T.transpose @0 @1 (T.reshape @'[b*s, e] dY))
                           (T.reshape @'[b*s, e] x)
 

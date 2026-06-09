@@ -1,7 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
+-- {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+-- {-# LANGUAGE MultiParamTypeClasses #-}
+
 
 import Control.DeepSeq
 import Criterion.Main
@@ -74,7 +82,12 @@ main = do
               HT.irisEpochForwardOnly initTorch htIrisTargets,
           bench "flattenParams-x18" $
             nf (\() -> map (const (flattenParameters initTorch)) htIrisTargets) ()
-        ]--,
+        ],
+      bgroup
+        "time-to-95pct"
+        [ bench "Float"  $ nfIO $ trainToAcc @T.Float  0.95
+        , bench "Double" $ nfIO $ trainToAcc @T.Double 0.95
+        ]
       -- bgroup
       --   "predict"
       --   [ bench "typed-hasktorch" $
@@ -95,3 +108,19 @@ main = do
 instance NFData (T.Tensor dv dt shape) where
   rnf :: T.Tensor dv dt shape -> ()
   rnf = rnf . T.toDynamic
+
+--------------------------------------------------------------------------------
+-- Time-to-accuracy helpers
+--------------------------------------------------------------------------------
+
+-- Train from a fresh random init until accuracy >= threshold; return epoch count.
+-- Separate functions per dtype because RandStack lives in an unexposed module.
+trainToAcc :: forall dt . (SaneDT IrisDevice dt, T.KnownDType dt, T.RandDTypeIsValid IrisDevice dt) => Double -> IO Int
+trainToAcc thres = do
+  epochs <- irisBestParams @1 @IrisDevice @dt
+  return $! epochsToAcc thres $ map (irisAccuracy @1) epochs
+
+-- trainToAccDouble :: Double -> IO Int
+-- trainToAccDouble threshold = do
+--   epochs <- irisBestParams @1 @IrisDevice @T.Double
+--   return $! epochsToAcc threshold $ map (irisAccuracy @1) epochs

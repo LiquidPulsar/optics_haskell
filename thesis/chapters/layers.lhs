@@ -235,3 +235,217 @@ pass is a plain reshape with no gradient arithmetic.  Like the activation
 functions, |maxPool| and |flatten| are plain |Lens'| values and compose
 into parametric pipelines with |(.)| rather than |(.#.)|, contributing
 no parameter wires to the composed diagram.
+
+\section{Attention}
+
+Self-attention is the most structurally complex layer in this chapter: the
+output at every position is a weighted average of all other positions, with
+weights that are themselves a differentiable function of the input.
+Despite this non-linearity the layer is \emph{stateful}---four square
+projection matrices are its learnable parameters---and it fits into the
+|ParaLens'| abstraction without modification.  The parameter type groups
+the four matrices in a tuple:
+
+\begin{code}
+type SelfAttnP dev dt e =
+  ( Tensor dev dt [e, e]  -- Wq
+  , Tensor dev dt [e, e]  -- Wk
+  , Tensor dev dt [e, e]  -- Wv
+  , Tensor dev dt [e, e]  -- Wo
+  )
+\end{code}
+
+\noindent With batch size $b$, sequence length $s$, and embedding dimension $e$
+fixed at the type level, the signature of |selfAttention| is:
+
+\begin{code}
+selfAttention  ::  ( T.All KnownNat [b, s, e]
+                   , T.MatMulDTypeIsValid dev dt
+                   , T.BasicArithmeticDTypeIsValid dev dt
+                   , T.StandardFloatingPointDTypeValidation dev dt
+                   , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
+                   , KnownNat (b * s)
+                   , (b * (s * e)) ~ ((b * s) * e) )
+               =>  ParaLens'
+                     (SelfAttnP dev dt e)
+                     (Tensor dev dt [b, s, e])
+                     (Tensor dev dt [b, s, e])
+\end{code}
+
+\noindent The equality |(b * (s * e)) ~ ((b * s) * e)| cannot be discharged
+automatically by GHC's type-level arithmetic---the solver does not apply
+associativity of multiplication without an explicit witness.  It must be
+named in the constraint to justify the |reshape| to $[b{\cdot}s,\; e]$
+inside the weight-gradient helper.
+
+\paragraph{Forward pass.}
+Given input $X \in \mathbb{R}^{b \times s \times e}$, scaled dot-product
+attention proceeds in six steps.  The input is first projected into query,
+key, and value spaces:
+\[
+  Q = X W_Q^\top, \qquad K = X W_K^\top, \qquad V = X W_V^\top
+  \qquad \in \mathbb{R}^{b \times s \times e}
+\]
+The attention scores are formed by a scaled inner product, normalised by
+softmax, and used to produce a weighted average of the values:
+\[
+  S = \tfrac{1}{\sqrt{e}}\; Q K^\top
+  \;\in \mathbb{R}^{b \times s \times s},
+  \qquad
+  A = \operatorname{softmax}(S),
+  \qquad
+  \mathit{out} = A V W_O^\top
+\]
+All six intermediate values are retained by an internal helper |runFwd|,
+which is shared between the getter and the setter so that the backward
+pass need not recompute the forward pass:
+
+\begin{code}
+    runFwd (wq, wk, wv, wo) x =
+      let q       = proj wq x
+          k       = proj wk x
+          v       = proj wv x
+          scores  = T.mulScalar scale $ T.matmul q $ tr k
+          weights = T.softmax @2 scores
+          attn    = T.matmul weights v
+      in (q, k, v, weights, attn, proj wo attn)
+\end{code}
+
+\noindent where |proj w x = T.matmul x (T.transpose @0 @1 w)| computes
+$x W^\top$, |tr = T.transpose @1 @2| transposes the last two index
+positions, and |scale| is the compile-time constant $1/\sqrt{e}$.
+
+\paragraph{Backward pass.}
+The setter applies the chain rule in the reverse order of the graph.
+At each node the standard matrix-calculus identity for $Y = X A^\top$,
+namely $\partial L/\partial X = (\partial L/\partial Y)\, A$ and
+$\partial L/\partial A = (\partial L/\partial Y)^\top X$, is applied.
+
+\emph{Output projection.}
+Differentiating $\mathit{out} = \mathit{attn}\, W_O^\top$:
+\[
+  \tfrac{\partial L}{\partial \mathit{attn}}
+    = \tfrac{\partial L}{\partial \mathit{out}}\, W_O,
+  \qquad
+  \tfrac{\partial L}{\partial W_O}
+    = \Bigl(\tfrac{\partial L}{\partial \mathit{out}}\Bigr)^\top \mathit{attn}
+\]
+Both tensors are reshaped to $[b{\cdot}s,\; e]$ before the matrix multiply,
+yielding $\partial L/\partial W_O \in \mathbb{R}^{e \times e}$.  The helper
+|wGrad| encapsulates this flatten-matmul pattern and is reused identically
+for all four projection matrices, playing the same role that
+|T.matmul (transp grad) x| plays in |linear|:
+
+\begin{code}
+    wGrad x dY =
+      T.matmul  (T.transpose @0 @1 (T.reshape @[b * s, e] dY))
+                (T.reshape @[b * s, e] x)
+\end{code}
+
+\emph{Weighted sum.}
+Differentiating $\mathit{attn} = A\, V$:
+\[
+  \tfrac{\partial L}{\partial A}
+    = \tfrac{\partial L}{\partial \mathit{attn}}\, V^\top,
+  \qquad
+  \tfrac{\partial L}{\partial V}
+    = A^\top\, \tfrac{\partial L}{\partial \mathit{attn}}
+\]
+
+\emph{Softmax.}
+The Jacobian of softmax contracts to a rank-one correction.  For a single
+row $y = \operatorname{softmax}(x)$ and incoming gradient $g$:
+\[
+  \tfrac{\partial L}{\partial x_i}
+  = y_i\!\left(g_i - \sum_j y_j\, g_j\right)
+\]
+The inner dot product is computed with |sumDim @2| along the key axis,
+reshaped to $[b, s, 1]$ for broadcasting, and the result is scaled
+element-wise by $A$:
+
+\begin{code}
+    softmaxBwd w dw = w * T.sub dw dot
+      where dot = T.reshape @[b, s, 1] $ T.sumDim @2 (w * dw)
+\end{code}
+
+\emph{Scaled dot-product.}
+Differentiating $S = \frac{1}{\sqrt{e}}\, Q K^\top$:
+\[
+  \tfrac{\partial L}{\partial Q}
+    = \tfrac{1}{\sqrt{e}}\,\tfrac{\partial L}{\partial S}\, K,
+  \qquad
+  \tfrac{\partial L}{\partial K}
+    = \tfrac{1}{\sqrt{e}}\!\left(\tfrac{\partial L}{\partial S}\right)^\top Q
+\]
+
+\emph{Input projections.}
+|wGrad| is applied once per projection to obtain
+$\partial L/\partial W_Q$, $\partial L/\partial W_K$, and
+$\partial L/\partial W_V$.  The gradient with respect to the input $X$
+accumulates the three back-projections:
+\[
+  \tfrac{\partial L}{\partial X}
+  = \tfrac{\partial L}{\partial Q}\, W_Q
+  + \tfrac{\partial L}{\partial K}\, W_K
+  + \tfrac{\partial L}{\partial V}\, W_V
+\]
+The complete setter, with |mm = T.matmul|, |tr = T.transpose @1 @2|,
+and |scale'| denoting multiplication by $1/\sqrt{e}$, is:
+
+\begin{code}
+    rev (p@(wq,wk,wv,wo), x) dOut = ((dWq, dWk, dWv, dWo), dX)
+      where
+        (q, k, v, weights, attn, _) = runFwd p x
+        dAttn    = T.matmul dOut wo
+        dWo      = wGrad attn dOut
+        dWeights = mm dAttn    (tr v)
+        dV       = mm (tr weights) dAttn
+        dScores  = softmaxBwd weights dWeights
+        dQ       = scale' $ mm dScores    k
+        dK       = scale' $ mm (tr dScores) q
+        dWq      = wGrad x dQ
+        dWk      = wGrad x dK
+        dWv      = wGrad x dV
+        dX       = T.matmul dQ wq + T.matmul dK wk + T.matmul dV wv
+\end{code}
+
+\paragraph{Multi-head attention.}
+|multiHeadSelfAttention| partitions the embedding dimension across $h$
+independent attention heads, each of width $\mathit{hd} = e / h$, enforced
+at the type level by |e ~ h * hd|.  The parameter type is unchanged---the
+weight matrices remain $[e, e]$ and operate on the full embedding---but two
+reshape helpers split and merge the head dimension around the attention
+computation:
+
+\begin{code}
+    splitHeads  = T.transpose @1 @2 . T.reshape @[b, s, h, hd]
+    mergeHeads  = T.reshape @[b, s, e] . T.transpose @1 @2
+\end{code}
+
+\noindent |splitHeads| maps $[b, s, e] \to [b, s, h, \mathit{hd}] \to
+[b, h, s, \mathit{hd}]$: the |reshape| partitions each embedding vector
+into $h$ contiguous slices of width $\mathit{hd}$, and the |transpose|
+brings the head axis adjacent to the batch axis so that subsequent batched
+matrix multiplies treat $b \times h$ as a single leading batch dimension.
+The constraint |Numel '[b, s, e] ~ Numel '[b, s, h, hd]| is the type-level
+proof that the reshape preserves the total number of elements.
+
+Two details differ from the single-head case.  First, the scale factor is
+$1/\sqrt{\mathit{hd}}$ rather than $1/\sqrt{e}$: within each head the
+key--query dot products grow with the per-head width $\mathit{hd}$, not
+with the full embedding $e$.  Second, softmax is applied along dimension~3
+(the key-position axis in the layout $[b, h, s, s]$) rather than
+dimension~2, and the softmax backward uses |sumDim @3| and a broadcast
+reshape to $[b, h, s, 1]$ accordingly.
+
+The backward pass is structurally identical to the single-head case.
+Gradients for $Q$, $K$, and $V$ are computed in the $[b, h, s, \mathit{hd}]$
+layout and collapsed to $[b, s, e]$ via |mergeHeads| before being passed
+to |wGrad|.  Because the projection matrices remain $[e, e]$ regardless
+of $h$, |wGrad| is shared unchanged between the two implementations.
+
+Like every other layer in this chapter, both attention variants are
+|ParaLens'| values and compose into larger architectures via |(.#.)|.
+The 4-tuple parameter type is absorbed automatically into the product type
+of the enclosing model by the composition rule, with no boilerplate
+required.

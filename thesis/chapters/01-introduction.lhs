@@ -98,6 +98,15 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
   %   inferred by type families, so architectural mismatches are
   %   compile-time errors.
 
+  \item \textbf{Attention as a \texttt{ParaLens'}.}
+    Scaled dot-product self-attention and its multi-head generalisation are
+    implemented as |ParaLens'| values with fully manually derived backward
+    passes, including the rank-one Jacobian correction for the softmax
+    non-linearity.  The multi-head variant enforces the constraint
+    $e = h \cdot \mathit{hd}$ at the type level via GHC's equality
+    constraints, so a head-count or embedding-dimension mismatch is a
+    compile-time error rather than a silent shape failure at runtime.
+
   \item \textbf{Type-level variable network depth.}
     The \texttt{Stack.hs} module uses type-level Peano naturals and
     typeclass induction to build networks of depth $n$ whose parameter

@@ -29,17 +29,17 @@ import qualified Torch as U
 
 -- https://github.com/hasktorch/hasktorch/blob/186a68c01af7489d1fb23ba66975f5c3570214b5/hasktorch/test/FunctionalSpec.hs#L206
 
-test :: Tensor '(T.CPU, 0) T.Double '[10, 10, 5, 6]
+test :: Tensor '(T.CPU, 0) T.Double [10, 10, 5, 6]
 test = T.convTranspose2d @'(1,1) @'(0,0) (T.ones @'[3, 10, 1, 1]) (T.ones @'[10]) (T.ones @'[10, 3, 5, 6])
 
--- test1 :: Tensor '(T.CPU, 0) T.Float '[4, 10, 9, 10] -- this doesn't typecheck due to bug :p
+-- test1 :: Tensor '(T.CPU, 0) T.Float [4, 10, 9, 10] -- this doesn't typecheck due to bug :p
 -- test1 =
 --   T.convTranspose2d @'(1,1) @'(0,0)
 --     (T.ones @'[3, 10, 3, 3])   -- weight
 --     (T.ones @'[10])            -- bias
 --     (T.ones @'[4, 3, 7, 8])    -- input
 
-test1 :: Tensor '(T.CPU, 0) T.Float '[4, 10, 9, 10] -- now it does!
+test1 :: Tensor '(T.CPU, 0) T.Float [4, 10, 9, 10] -- now it does!
 test1 =
   convTranspose2d @'(1,1) @'(0,0)
     (T.ones @'[3, 10, 3, 3])   -- weight
@@ -63,7 +63,7 @@ convTranspose2d ::
     device.
   ( T.All
       KnownNat
-      '[ Fst stride,
+      [ Fst stride,
          Snd stride,
          Fst padding,
          Snd padding,
@@ -82,13 +82,13 @@ convTranspose2d ::
     ConvSideCheck outputSize1 kernelSize1 (Snd stride) (Snd padding) inputSize1
   ) =>
   -- | weight
-  Tensor device dtype '[inputChannelSize, outputChannelSize, kernelSize0, kernelSize1] ->
+  Tensor device dtype [inputChannelSize, outputChannelSize, kernelSize0, kernelSize1] ->
   -- | bias
   Tensor device dtype '[outputChannelSize] ->
   -- | input
-  Tensor device dtype '[batchSize, inputChannelSize, inputSize0, inputSize1] ->
+  Tensor device dtype [batchSize, inputChannelSize, inputSize0, inputSize1] ->
   -- | output
-  Tensor device dtype '[batchSize, outputChannelSize, outputSize0, outputSize1]
+  Tensor device dtype [batchSize, outputChannelSize, outputSize0, outputSize1]
 convTranspose2d weight bias input =
   unsafePerformIO $
     cast7

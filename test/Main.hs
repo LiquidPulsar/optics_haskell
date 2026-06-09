@@ -62,7 +62,7 @@ gradViaRunStep model optim loss = do
 
 -------------------------
 -- testLinear
--- linear :: ParaLens' (T '[o,i]) (T '[b,i]) (T '[b,o])
+-- linear :: ParaLens' (T [o,i]) (T [b,i]) (T [b,o])
 -- fwd  (w, x) = x @ w^T
 -- dW = grad^T @ x
 -------------------------
@@ -82,9 +82,9 @@ testLinear = do
       loss = sumAll out
   [dw_ref] <- gradViaRunStep mdl GD loss
 
-  let w     = UnsafeMkTensor w0 :: Tensor Dev Flt '[2, 3]
-      x     = UnsafeMkTensor x0 :: Tensor Dev Flt '[1, 3]
-      onesG = T.ones @'[1, 2]    :: Tensor Dev Flt '[1, 2]
+  let w     = UnsafeMkTensor w0 :: Tensor Dev Flt [2, 3]
+      x     = UnsafeMkTensor x0 :: Tensor Dev Flt [1, 3]
+      onesG = T.ones @'[1, 2]    :: Tensor Dev Flt [1, 2]
       y_lens             = view L.linear (w, x)
       (dw_lens, _)       = set  L.linear onesG (w, x)
 
@@ -115,8 +115,8 @@ testAddLens = do
   [db_ref] <- gradViaRunStep mdl GD loss
 
   let bias  = UnsafeMkTensor b0 :: Tensor Dev Flt '[3]
-      x     = UnsafeMkTensor x0 :: Tensor Dev Flt '[4, 3]
-      onesG = T.ones @'[4, 3]    :: Tensor Dev Flt '[4, 3]
+      x     = UnsafeMkTensor x0 :: Tensor Dev Flt [4, 3]
+      onesG = T.ones @'[4, 3]    :: Tensor Dev Flt [4, 3]
       y_lens              = view L.addLens (bias, x)
       (dbias_lens, _)     = set  L.addLens onesG (bias, x)
 
@@ -145,8 +145,8 @@ testSigmoid = do
       loss = sumAll out
   [dx_ref] <- gradViaRunStep mdl GD loss
 
-  let x     = UnsafeMkTensor (reshape [2, 5] x0) :: Tensor Dev Flt '[2, 5]
-      onesG = T.ones @'[2, 5]                      :: Tensor Dev Flt '[2, 5]
+  let x     = UnsafeMkTensor (reshape [2, 5] x0) :: Tensor Dev Flt [2, 5]
+      onesG = T.ones @'[2, 5]                      :: Tensor Dev Flt [2, 5]
       y_lens  = view L.sigmoid x
       dx_lens = set  L.sigmoid onesG x
 
@@ -171,8 +171,8 @@ testRelu = do
       loss = sumAll out
   [dx_ref] <- gradViaRunStep mdl GD loss
 
-  let x     = UnsafeMkTensor (reshape [2, 5] x0) :: Tensor Dev Flt '[2, 5]
-      onesG = T.ones @'[2, 5]                      :: Tensor Dev Flt '[2, 5]
+  let x     = UnsafeMkTensor (reshape [2, 5] x0) :: Tensor Dev Flt [2, 5]
+      onesG = T.ones @'[2, 5]                      :: Tensor Dev Flt [2, 5]
       y_lens  = view L.relu x
       dx_lens = set  L.relu onesG x
 
@@ -189,8 +189,8 @@ testRelu = do
 
 testConvForward :: IO [Bool]
 testConvForward = do
-  let k = typed (take 18 [1..]) [2,1,3,3] :: Tensor Dev Flt '[2, 1, 3, 3]
-      x = typed (take 49 [1..]) [1,1,7,7] :: Tensor Dev Flt '[1, 1, 7, 7]
+  let k = typed (take 18 [1..]) [2,1,3,3] :: Tensor Dev Flt [2, 1, 3, 3]
+      x = typed (take 49 [1..]) [1,1,7,7] :: Tensor Dev Flt [1, 1, 7, 7]
 
   let y_lens = view (L.convLens @1 @2 @1 @7 @7) (k, x)
   let y_ref  = T.conv2d @'(1,1) @'(0,0) k T.zeros x
@@ -215,13 +215,13 @@ testConvDK = do
   kP <- makeIndependent k0
   let mdl  = ConvModel kP
       -- use toDependent so the forward graph is connected to kP
-      kT   = UnsafeMkTensor (toDependent kP) :: Tensor Dev Flt '[2, 1, 3, 3]
-      xT   = UnsafeMkTensor x0               :: Tensor Dev Flt '[1, 1, 7, 7]
+      kT   = UnsafeMkTensor (toDependent kP) :: Tensor Dev Flt [2, 1, 3, 3]
+      xT   = UnsafeMkTensor x0               :: Tensor Dev Flt [1, 1, 7, 7]
       out  = toDynamic $ T.conv2d @'(1,1) @'(0,0) kT T.zeros xT
       loss = sumAll out
   [dk_ref] <- gradViaRunStep mdl GD loss
 
-  let onesG     = T.ones @'[1, 2, 5, 5] :: Tensor Dev Flt '[1, 2, 5, 5]
+  let onesG     = T.ones @'[1, 2, 5, 5] :: Tensor Dev Flt [1, 2, 5, 5]
       (dk_lens, _) = set (L.convLens @1 @2 @1 @7 @7) onesG (kT, xT)
 
   sequence
@@ -230,14 +230,14 @@ testConvDK = do
 
 -------------------------
 -- testFlatten
--- flatten :: Lens' (T (b:shape)) (T '[b, Product shape])
+-- flatten :: Lens' (T (b:shape)) (T [b, Product shape])
 -- fwd x = reshape,  bwd _ g = reshape back
 -------------------------
 
 testFlatten :: IO [Bool]
 testFlatten = do
-  let x     = typed (take 24 [1..]) [3, 2, 4] :: Tensor Dev Flt '[3, 2, 4]
-      onesG = T.ones @'[3, 8]                  :: Tensor Dev Flt '[3, 8]
+  let x     = typed (take 24 [1..]) [3, 2, 4] :: Tensor Dev Flt [3, 2, 4]
+      onesG = T.ones @'[3, 8]                  :: Tensor Dev Flt [3, 8]
 
   let y_lens  = view (L.flatten @3 @'[2, 4]) x
   let dx_lens = set  (L.flatten @3 @'[2, 4]) onesG x
@@ -267,9 +267,9 @@ makeModels w1vs b1vs w2vs b2vs = do
       w2d = reshape [3, 4] $ asTensor w2vs
       b2d = asTensor b2vs
   let typedParams =
-        ( ( UnsafeMkTensor w1d :: Tensor Dev Flt '[4, 4]
+        ( ( UnsafeMkTensor w1d :: Tensor Dev Flt [4, 4]
           , UnsafeMkTensor b1d :: Tensor Dev Flt '[4]   )
-        , ( UnsafeMkTensor w2d :: Tensor Dev Flt '[3, 4]
+        , ( UnsafeMkTensor w2d :: Tensor Dev Flt [3, 4]
           , UnsafeMkTensor b2d :: Tensor Dev Flt '[3]   ) )
   w1P <- makeIndependent w1d
   b1P <- makeIndependent b1d
@@ -298,7 +298,7 @@ testIrisFwdEquiv :: IO [Bool]
 testIrisFwdEquiv = do
   (typedParams, dynModel) <- makeModels testW1 testB1 testW2 testB2
   let xd = reshape [8, 4] $ asTensor (take 32 [0.01, 0.02 ..] :: [Float])
-      xt = UnsafeMkTensor xd :: Tensor Dev Flt '[8, 4]
+      xt = UnsafeMkTensor xd :: Tensor Dev Flt [8, 4]
       typedOut = SI.irisPredict @1 typedParams xt
       dynOut   = HT.irisModel dynModel xd
   sequence

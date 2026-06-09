@@ -72,6 +72,8 @@ library
         IrisMLP
         IrisMLPMom
         Static.Iris
+        Static.Autoencoder
+        Static.Attention
         Compile
         Static.Mnist
         Static.Layers
