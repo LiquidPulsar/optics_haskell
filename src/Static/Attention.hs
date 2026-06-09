@@ -33,9 +33,10 @@ selfAttention ::
   , T.KnownDType dt
   , T.KnownDevice dev
   , T.SumDType dt ~ dt
+  , T.SumDTypeIsValid dev dt
   -- Implied but ah well
   , (b * (s * e)) ~ ((b * s) * e)
-  , KnownNat (b * s), T.SumDTypeIsValid dev dt
+  , KnownNat (b * s)
   ) =>
   ParaLens'
     (SelfAttnP dev dt e)
@@ -49,6 +50,7 @@ selfAttention = lens fwd rev
     proj w x = T.matmul x (T.transpose @0 @1 w)
 
     -- recomputed in rev, same pattern as sigmoid/relu
+    runFwd :: (t [e, e], t [e, e], t [e, e], t [e, e]) -> t [b, s, e] -> (t [b, s, e], t [b, s, e], t [b, s, e], t [b, s, s], t [b, s, e], t [b, s, e])
     runFwd (wq, wk, wv, wo) x =
       let q       = proj wq x
           k       = proj wk x
@@ -57,29 +59,32 @@ selfAttention = lens fwd rev
           weights = T.softmax @2 scores   -- [b, s, s]
           attn    = T.matmul weights v    -- [b, s, e]
       in (q, k, v, weights, attn, proj wo attn)
+    {-# INLINE runFwd #-}
 
-    fwd (p :: SelfAttnP dev dt e, x) = let (_, _, _, _, _, out) = runFwd p x in out
+    fwd :: (SelfAttnP dev dt e, t [b, s, e]) -> t [b, s, e]
+    fwd (p, x) = let (_, _, _, _, _, out) = runFwd p x in out
 
-    rev (p@(wq,wk,wv,wo) :: SelfAttnP dev dt e, x) dOut = ((dWq, dWk, dWv, dWo), dX)
+    rev :: (SelfAttnP dev dt e, t [b, s, e]) -> t [b, s, e] -> (SelfAttnP dev dt e, t [b, s, e])
+    rev (p@(wq,wk,wv,wo), x) dOut = ((dWq, dWk, dWv, dWo), dX)
       where
         (q, k, v, weights, attn, _) = runFwd p x
 
-        -- ∂L/∂attn and ∂L/∂Wo via output projection (out = attn @ Wo^T)
+        -- dL/dattn and dL/dWo via output projection (out = attn @ Wo^T)
         dAttn = T.matmul dOut wo                                            -- [b,s,e] @ [e,e]
         dWo   = wGrad attn dOut
 
-        -- ∂L/∂weights and ∂L/∂v via weighted sum (attn = weights @ v)
+        -- dL/dweights and dL/dv via weighted sum (attn = weights @ v)
         dWeights = mm dAttn      (tr v)                              -- [b,s,s]
         dV       = mm (tr weights) dAttn                             -- [b,s,e]
 
-        -- ∂L/∂scores via softmax
+        -- dL/dscores via softmax
         dScores  = softmaxBwd weights dWeights
 
-        -- ∂L/∂q and ∂L/∂k via scaled matmul (scores = scale * q @ k^T)
+        -- dL/dq and dL/dk via scaled matmul (scores = scale * q @ k^T)
         dQ = scale' $ mm dScores      k                             -- [b,s,e]
         dK = scale' $ mm (tr dScores) q                             -- [b,s,e]
 
-        -- ∂L/∂Wq,Wk,Wv and ∂L/∂x via input projections (q = x @ Wq^T)
+        -- dL/dWq,Wk,Wv and dL/dx via input projections (q = x @ Wq^T)
         dWq = wGrad x dQ
         dWk = wGrad x dK
         dWv = wGrad x dV
@@ -106,6 +111,7 @@ selfAttention = lens fwd rev
     softmaxBwd w dw = w * T.sub dw dot
       where
         dot = T.reshape @[b, s, 1] $ T.sumDim @2 (w * dw)
+    {-# INLINE softmaxBwd #-}
 
 multiHeadSelfAttention ::
   forall b s e h hd dev dt t.
