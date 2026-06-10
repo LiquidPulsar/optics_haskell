@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {- HLINT ignore "Redundant $" -}
 
 module Core where
@@ -7,6 +8,7 @@ module Core where
 import Control.Lens
 import Control.Arrow
 import GHC.Exts (inline)
+import Control.Monad (join)
 
 -- If C is a strict symmetric monoidal category (with monoidal product ⊗ and monoidal unit 𝐼) then we define a category Para(C) with
 
@@ -123,16 +125,29 @@ liftUpdate ul = lens (map $ view ul) $ flip (zipWith (set ul))
 -- liftUpdate ul = lens (map $ view ul) (\ps gs -> zipWith (set ul) gs ps)
 {-# INLINE liftUpdate #-}
 
--- rep :: forall n p a. (KnownNat n, 1 <= n) => ParaLens' p a a -> ParaLens' (Stacked n p) a a -> ParaLens' (Stacked (n+1) p) a a
--- rep l r = case stackedSucc @n @p of Refl -> l .#. r
+alongsidePara :: forall p p' q q' a a' b b' c c' d d' . ParaLens p p' a a' b b' -> ParaLens q q' c c' d d' -> ParaLens (p,q) (p',q') (a,c) (a',c') (b,d) (b',d')
+alongsidePara ab cd = rotate' . alongside ab cd
+  where
+    rotate' :: Iso ((p,q),(a,c)) ((p',q'),(a',c')) ((p,a),(q,c)) ((p',a'),(q',c'))
+    rotate' = iso fwd rev
+      where
+        fwd ((p,q),(a,c)) = ((p,a),(q,c))
+        rev ((p',a'),(q',c')) = ((p',q'),(a',c'))
+    {-# INLINE rotate' #-}
+{-# INLINE alongsidePara #-}
 
--- x :: ParaLens' ((), ((), ())) a a
--- x = toPara id .#. (toPara id .#. toPara id)
+splitIso :: (Num a, Num a') => Iso a a' (a,a) (a',a')
+splitIso = iso (join (,)) (uncurry (+))
+{-# INLINE splitIso #-}
 
--- stack :: forall n p a. KnownNat n => ParaLens' p a a -> ParaLens' (Stacked n p) a a
--- stack l = case natVal (Proxy @n) of
---     1 -> unsafeCoerce l                         -- Stacked 1 p ~ p
---     _ -> rep @(n-1) l (stack @(n-1) l) -- case someNatVal (k - 1) of
---         -- Just (SomeNat (_ :: Proxy m)) ->
---         --     unsafeCoerce (rep l (stack @(n-1) l))   -- Stacked (m+1) p ~ Stacked n p
---         -- _ -> error "oops"
+splitPara :: (Num b, Num b') => ParaLens p p' a a' b b' -> ParaLens p p' a a' (b, b) (b', b')
+splitPara p = p . splitIso
+{-# INLINE splitPara #-}
+
+-- Skip connection: out = f(x) + x
+-- Fan-out data with splitIso, run f alongside id, then add via from splitIso.
+-- Backward: from splitIso duplicates dy; alongside routes through f and id;
+-- rightLens splitIso sums dx_f + dy back into the data slot.
+skipPara :: Num a => ParaLens' p a a -> ParaLens' p a a
+skipPara f = rightLens splitIso . from rotate . alongside f id . from splitIso
+{-# INLINE skipPara #-}

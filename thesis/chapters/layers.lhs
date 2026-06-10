@@ -236,6 +236,77 @@ functions, |maxPool| and |flatten| are plain |Lens'| values and compose
 into parametric pipelines with |(.)| rather than |(.#.)|, contributing
 no parameter wires to the composed diagram.
 
+\section{Skip Connections}
+\label{sec:skipconnections}
+
+A skip connection adds the input of a sub-network directly to its output,
+forming a residual shortcut around the learned transformation.  In the
+parametric lens framework this is a \emph{higher-order} combinator: given
+any endomorphic layer $f :: \texttt{ParaLens' p a a}$, the wrapped
+layer computes $y = f(x) + x$ and the combined parameter type is unchanged.
+Gradients flow back through two paths simultaneously---one through $f$, one
+through the identity---and are summed at the input:
+\[
+  \tfrac{\partial L}{\partial x}
+  = \underbrace{\tfrac{\partial L}{\partial f(x)} \cdot f'(x)}_{\text{through }f}
+  \;+\;
+  \underbrace{\tfrac{\partial L}{\partial y}}_{\text{skip}}
+\]
+The skip path ensures that gradients reach early layers even when
+the learned transformation $f$ saturates or vanishes.
+
+The implementation assembles this from two existing isomorphisms.
+|splitIso :: Iso a a (a, a) (a, a)| duplicates its argument in the
+forward direction and sums the two results in the backward direction;
+|from splitIso| is the reverse: it adds in the forward direction and
+duplicates in the backward.  Together with |rightLens|, |rotate|, and
+|alongside|, four combinators suffice:
+
+\begin{code}
+skipPara :: Num a => ParaLens' p a a -> ParaLens' p a a
+skipPara f = rightLens splitIso . from rotate . alongside f id . from splitIso
+\end{code}
+
+\noindent Reading the chain left to right: |rightLens splitIso| fans the
+data wire $a$ to $(a, a)$ while leaving the parameter wire $p$ intact;
+|from rotate| rearranges $(p, (a, a))$ into $((p, a), a)$ so that
+|alongside| can feed one copy to |f|---together with its parameters---and
+the other to |id|; the focus of |alongside f id| is the pair $(f(x),\, x)$;
+|from splitIso| sums the pair to produce $f(x) + x$ in the forward direction.
+
+The backward pass requires no extra work beyond the combinator structure.
+|from splitIso|{}'s setter distributes $\partial L/\partial y$ to both branches;
+|alongside| routes the first copy through |f|{}'s setter to obtain
+$(\partial L/\partial p,\;\partial L/\partial x\vert_f)$ and passes the second
+copy through |id| unchanged; |rightLens splitIso|{}'s setter sums the two
+input gradients, recovering the residual formula.
+
+A two-layer residual block is a single application of |skipPara|:
+
+\begin{code}
+resBlock = skipPara (matMulLens . relu .#. matMulLens . relu)
+\end{code}
+
+\noindent The parameter type |ResBlockP dev dt = (MMP dev dt Hidden Hidden, MMP dev dt Hidden Hidden)|
+holds the two weight-bias pairs, inherited without modification from the
+inner pipeline.
+
+The |stackN @n| combinator nests |n| copies of a |ParaLens'| with |(.#.)|
+at the type level, deriving the product parameter type |StackedN n p|
+automatically.  Sandwiching a stack of residual blocks between an input
+projection and an output classifier gives:
+
+\begin{code}
+resMnistModel = argToPara
+  .#. rightLens (flatten @b @[1, 28, 28]) . matMulLens . relu
+  .#. stackN @NumBlocks resBlock
+  .#. matMulLens . sigmoid
+\end{code}
+
+\noindent The full parameter type---input projection, product of block
+parameters, output projection---is inferred entirely from the composition,
+with no manual tuple construction.
+
 \section{Attention}
 
 Self-attention is the most structurally complex layer in this chapter: the
@@ -427,7 +498,7 @@ computation:
 into $h$ contiguous slices of width $\mathit{hd}$, and the |transpose|
 brings the head axis adjacent to the batch axis so that subsequent batched
 matrix multiplies treat $b \times h$ as a single leading batch dimension.
-The constraint |Numel '[b, s, e] ~ Numel '[b, s, h, hd]| is the type-level
+The constraint |Numel [b, s, e] ~ Numel [b, s, h, hd]| is the type-level
 proof that the reshape preserves the total number of elements.
 
 Two details differ from the single-head case.  First, the scale factor is

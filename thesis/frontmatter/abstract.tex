@@ -1,4 +1,33 @@
 \begin{abstract}
 \noindent
-TODO
+We present a Haskell implementation of the parametric lens framework for
+gradient-based machine learning proposed by Cruttwell et al.
+In this framework every component of a training pipeline---layer, loss
+function, and optimiser---is a \emph{parametric lens}: a composable unit
+carrying a forward pass and a manually derived backward pass as a single
+algebraic structure.  Composition of lenses corresponds directly to the
+wiring of modules in a computation graph, and the combined parameter type
+is inferred automatically by the type system.
+
+The implementation extends the original Python proof-of-concept in several
+directions.  Tensor shapes, mini-batch sizes, compute devices, and element
+dtypes are encoded as GHC type-level parameters, so architectural
+mismatches are compile-time errors rather than runtime failures; all models
+are written in batched form from the ground up, whereas the original
+processes a single example at a time.  Autoencoders are expressed as two
+ordinary lens pipelines composed end-to-end, demonstrating that the
+framework is not limited to discriminative tasks.  Residual skip
+connections are realised as a higher-order combinator \texttt{skipPara},
+built entirely from existing lens primitives, with the identity gradient
+path emerging automatically from the combinator structure rather than from
+a separate derivation.  Scaled dot-product self-attention and its
+multi-head generalisation are implemented as \texttt{ParaLens'} values with
+fully hand-derived backward passes, including the rank-one Jacobian
+correction for the softmax non-linearity, with the head-count and
+embedding-dimension compatibility constraint enforced at the type level.
+Variable-depth residual networks are constructed by typeclass induction
+over type-level Peano naturals.  Zero overhead is verified by GHC Core
+inspection: the entire lens abstraction---composition,
+reparametrisation, the van Laarhoven \texttt{forall}---is absent from the
+optimised output.
 \end{abstract}

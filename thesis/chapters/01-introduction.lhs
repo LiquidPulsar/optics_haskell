@@ -49,17 +49,14 @@ This approach offers significant advantages over standard modularity:
 \end{itemize}
 
 
-\subsection{Project Objectives}
+\subsection{Implementation in Haskell}
 
-The primary objective of this project is to instantiate this theoretical framework within the Haskell programming language. While previous implementations have utilised Python \cite{catlearning}, Haskell offers a strong type system and mature libraries for optics \cite{Pickering_2017, ekmett2025lens}, as well as strong abstraction facilities.
-
-The project will focus on the following deliverables:
-\begin{itemize}
-    \item \textbf{Formal Core Abstractions:}\label{coreabstractions} Developing Haskell types that formalise parametric maps and CRDCs, providing the necessary infrastructure for automatic differentiation. Also, composition and wiring of submodules via optics.
-    \item \textbf{Categorical Optimizers:} Implementing stateful optimisation algorithms (e.g., Momentum, Adam, Adagrad) as reusable lens combinators.
-    \item \textbf{Model Composition:} Demonstrating the framework's expressiveness by constructing standard architectures (such as Multi-Layer Perceptrons) through the composition of primitive lenses.
-    \item \textbf{Evaluation:} Benchmarking the library against existing Haskell numeric packages to verify correctness and assess the performance overhead of the categorical abstraction.
-\end{itemize}
+The objective of this project is to instantiate the Cruttwell et al.\
+framework in Haskell.  Previous implementations have used Python
+\cite{catlearning}; Haskell offers a strong type system and mature
+libraries for optics \cite{Pickering_2017, ekmett2025lens} that make the
+type-level guarantees central to this thesis expressible directly in the
+language.
 
 \section{Contributions}
 \label{sec:contributions}
@@ -97,6 +94,28 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
   %   (kernel size, stride, and padding are all type-level tuples) are
   %   inferred by type families, so architectural mismatches are
   %   compile-time errors.
+
+  \item \textbf{Autoencoder architectures.}
+    The framework is extended to autoencoder networks, where encoder and
+    decoder are each ordinary |ParaLens'| pipelines that compose with
+    |(.#.)| into a single end-to-end model.  The bottleneck constraint
+    (a latent dimension smaller than the input) is enforced at the type
+    level with no special-casing: the composition rule handles the
+    dimension change identically to any other layer transition.  The
+    model is trained on MNIST images with MSE reconstruction loss,
+    demonstrating that the framework is not limited to discriminative tasks.
+
+  \item \textbf{Skip connections as a combinator.}
+    Residual shortcut connections are expressed as a single higher-order
+    combinator |skipPara :: ParaLens' p a a -> ParaLens' p a a|, built
+    entirely from existing primitives---|splitIso|, |from rotate|,
+    |alongside|, and |from splitIso|---with no new lens axioms.
+    The identity gradient path, which ensures gradients reach early
+    layers even when the learned branch saturates, emerges automatically
+    from the combinator structure: no separate backward-pass derivation
+    is required.  Stacking |skipPara|-wrapped blocks via |stackN| yields
+    a residual network whose full parameter type is inferred by the
+    type system.
 
   \item \textbf{Attention as a \texttt{ParaLens'}.}
     Scaled dot-product self-attention and its multi-head generalisation are

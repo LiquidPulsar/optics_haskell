@@ -50,7 +50,7 @@ with a loss |loss| via |(.#.)| gives a term whose output is still
 \[
   \mathit{net} \mathbin{\bullet} \mathit{loss}
   \;:\;
-  \text{|ParaLens' (net\_params, t shape) (t input\_shape) (t [])|}.
+  \text{|ParaLens' (net_params, t shape) (t input_shape) (t [])|}.
 \]
 
 The true \emph{cap}---the morphism that closes the final wire to the

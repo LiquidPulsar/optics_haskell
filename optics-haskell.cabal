@@ -76,6 +76,7 @@ library
         Static.Attention
         Compile
         Static.Mnist
+        Static.ResidualMnist
         Static.Layers
         Core
         IrisNoLens
@@ -197,5 +198,4 @@ benchmark optics-haskell-bench
         hasktorch ==0.2.2.0,
         criterion >= 1.5
     
-    other-modules:
-        HandRolled
+    -- other-modules:
