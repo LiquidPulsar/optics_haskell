@@ -27,7 +27,7 @@ import Control.Arrow ((***))
 Building on the Van Laarhoven lenses of the previous chapter, we now introduce
 \emph{parametric lenses}~\cite{catlearning}: an extension that promotes the
 parameter of a computation to a first-class wire in the type.  A standard lens
-|Lens s t a b| is stateless---it carries no mutable configuration of its own.
+|Lens s t a b| is stateless: it carries no mutable configuration of its own.
 For machine learning this is insufficient: a neural network layer holds weight
 matrices and bias vectors that are read during the forward pass and updated
 during the backward pass.  Parametric lenses make these parameters structural,
@@ -99,8 +99,8 @@ data on the horizontal wire:
 \label{fig:lens-para-tuple}
 \end{figure}
 
-Separating the $p$ component onto a dedicated \emph{vertical} axis---$p$
-entering from above on the left and $p'$ exiting upward on the right---and
+Separating the $p$ component onto a dedicated \emph{vertical} axis ($p$
+entering from above on the left and $p'$ exiting upward on the right), and
 retaining only $a$, $a'$ on the horizontal data wires yields the canonical
 wire diagram for a parametric lens:
 
@@ -176,7 +176,7 @@ Setting |f = Identity| recovers the forward pass $f$; setting
 ordinary lenses.
 
 The simplified variant |ParaLens'| fixes the types to be unchanged by the
-pass---the natural choice for layers that do not change their own interface:
+pass: the natural choice for layers that do not change their own interface:
 
 \begin{code}
 type ParaLens' p a b = ParaLens p p a a b b
@@ -193,7 +193,7 @@ toPara = (leftUnit .)
 \end{code}
 
 The helper |leftUnit| is the isomorphism witnessing that |((), a)| is
-isomorphic to |a| --- pairing with the unit type adds no information:
+isomorphic to |a|: pairing with the unit type adds no information:
 
 \begin{code}
 leftUnit :: Iso ((),a) ((),a') a a'
@@ -416,8 +416,8 @@ repara  ::  Lens q q' p p'
 repara r = (leftLens r .)
 \end{code}
 
-This is the mechanism by which an \emph{optimiser}---itself a lens that maps
-raw gradients to updated parameters---can be wired into a model without
+This is the mechanism by which an \emph{optimiser} (itself a lens that maps
+raw gradients to updated parameters) can be wired into a model without
 changing the model's own structure. Composing |leftLens r| on the left
 redirects the parameter wires through |r| before they reach the model, so the
 model continues to ``see'' its own parameter type while the outer context

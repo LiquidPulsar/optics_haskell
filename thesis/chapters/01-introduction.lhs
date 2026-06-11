@@ -104,8 +104,8 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
     Compiling the lens-based forward pass and an equivalent
     hand-written forward pass with \texttt{-O2 -ddump-simpl} produces
     structurally identical worker functions: the entire
-    \texttt{ParaLens} abstraction---composition, reparametrisation,
-    the van Laarhoven \texttt{forall}---is absent from the optimised
+    \texttt{ParaLens} abstraction (composition, reparametrisation,
+    the van Laarhoven \texttt{forall}) is absent from the optimised
     output.
 
 \end{enumerate}

@@ -62,7 +62,7 @@ is a weight matrix paired with a bias vector (Chapter~\ref{chap:layers}).
 |InnerLayer| is a $4\!\to\!4$ affine map.  |IParams n dv dt| is the
 product of $n$ inner layers followed by one output layer; for $n = 2$
 it expands to
-|((MMP dv dt 4 4, MMP dv dt 4 4), MMP dv dt 3 4)|---a fully concrete
+|((MMP dv dt 4 4, MMP dv dt 4 4), MMP dv dt 3 4)|: a fully concrete
 nested tuple whose structure mirrors the layer order.
 
 The |ParaLens'| model is:
@@ -85,7 +85,7 @@ irisModel  =   argToPara .#. nMuls @n .#. matMulLens . sigmoid
 tensor into a |ParaLens'| with a unit parameter, making it composable
 with |(.#.)|.  Each |(.#.)| join adds one more layer, automatically
 extending the parameter type.  The final |matMulLens . sigmoid| is the
-output layer---relu is parameter-free so it composes with plain |(.)|
+output layer; relu is parameter-free so it composes with plain |(.)|
 rather than with |(.#.)|, leaving the output layer's parameter type
 clean.
 
@@ -125,8 +125,8 @@ Compiling both |test = runFullModel (irisModel @1)| and
 worker functions \texttt{\$wtest} and \texttt{\$whandRolledTest} that
 are structurally identical.
 
-Each worker accepts nine unboxed arguments---a \texttt{ForeignPtr} pair
-for the input tensor and two pointer pairs per weight/bias group---and
+Each worker accepts nine unboxed arguments (a \texttt{ForeignPtr} pair
+for the input tensor and two pointer pairs per weight/bias group) and
 performs the same eight operations in the same order:
 
 \begin{verbatim}
@@ -240,8 +240,8 @@ irisGetEpoch @1 @(T.CUDA, 0) @T.Float   -- GPU, single precision
 \end{code}
 
 \noindent The model definition, training loop, and loss function are
-entirely unchanged.  Shape mismatches---for example, feeding a
-$[\mathit{batch},10]$ tensor to a layer expecting $[\mathit{batch},4]$---
+entirely unchanged.  Shape mismatches (for example, feeding a
+$[\mathit{batch},10]$ tensor to a layer expecting $[\mathit{batch},4]$)
 are type errors caught by the shape in |T.Tensor dv dt [b, 4]|.  No
 runtime assertions or dynamic shape checks are needed anywhere in the
 framework.
@@ -304,8 +304,8 @@ type MnistP dev dt  =  (Conv1K dev dt, (Conv2K dev dt, DenseP dev dt))
 \end{code}
 
 \noindent |MnistP| is the product of all learnable parameters in layer
-order.  A kernel of the wrong shape---say, |[3, 1, 4, 4]| instead of
-|[3, 1, 3, 3]| for |Conv1K|---is a compile-time type error.  The
+order.  A kernel of the wrong shape: say, |[3, 1, 4, 4]| instead of
+|[3, 1, 3, 3]| for |Conv1K|, is a compile-time type error.  The
 product structure is assembled automatically by |(.#.)|: each
 composition step extends the parameter tuple by one more layer's worth
 of weights, so |MnistP| is inferred rather than written by hand.
@@ -324,7 +324,7 @@ type SaneMnist dev dt  =
 \end{code}
 
 \noindent Any device/dtype combination that fails to satisfy the full
-set---for example, a device with no mean-reduction support---is
+set e.g. a device with no mean-reduction support, is
 rejected at compile time.
 
 \subsection*{Model Composition}
@@ -340,8 +340,8 @@ mnistModel  =   argToPara
 pass and the combined parameter type.  Within each convolutional arm,
 |relu| and |maxPool @...| are parameter-free lenses composed with
 plain |(.)| rather than |(.#.)|, so they thread data through without
-extending the parameter type.  The type applications to |maxPool|---
-kernel size, stride, and padding---are static; the output shape after
+extending the parameter type.  The type applications to |maxPool| (
+kernel size, stride, and padding) are static; the output shape after
 each pooling step is checked at compile time.  |withGradDesc convLens|
 (Section~\ref{sec:gradupdate}) wraps each convolutional layer with the
 CRDC natural addition, so the gradient update $\theta \leftarrow \theta
@@ -455,8 +455,8 @@ The model maps flattened MNIST images ($28\times28 = 784$ pixels) to a
   decoder: [b,  32] -> Dense(32->128)  -> ReLU -> Dense(128->784) -> Sigmoid
 \end{verbatim}
 
-\noindent The bottleneck---latent dimension 32 strictly smaller than
-input dimension 784---is enforced at the type level: the encoder output
+The bottleneck latent dimension 32 is strictly smaller than
+input dimension 784, and enforced at the type level: the encoder output
 type |T.Tensor dv dt [b, LatentDim]| must unify with the decoder input
 type, so a dimension mismatch is a compile-time error rather than a
 silent shape broadcast.
@@ -602,7 +602,7 @@ every layer inside a residual block.
 
 The architecture above chains three blocks with |stackN|, each
 carrying an independent |skipPara| connection spanning its own two
-layers---the standard residual block structure of He et al.\
+layers: the standard residual block structure of He et al.\
 \citep{he2015delving}.  The blocks are composed sequentially with no
 cross-block skip connections, matching the original ResNet design.
 For stages that change spatial resolution or channel count, the
@@ -630,8 +630,8 @@ compared using Criterion~\cite{criterion} on a CPU-only machine
 \end{description}
 
 \texttt{raw\_fwd} measures a single forward pass over one batch of eight
-samples; \texttt{epoch} measures one full training epoch---a strict left
-fold over all 18 mini-batches---including the backward pass and parameter
+samples; \texttt{epoch} measures one full training epoch, a strict left
+fold over all 18 mini-batches, including the backward pass and parameter
 update for every batch.
 
 \begin{table}[h]
@@ -689,8 +689,8 @@ Table~\ref{tab:overhead} isolates each proposed source of overhead.
 
 \paragraph{PyTorch backward pass: 93\% of the cost.}
 The \texttt{forward-only} variant runs the full forward pass for every
-mini-batch---including autograd graph construction, since the model
-parameters carry |requires_grad=True|---but never calls
+mini-batch, including autograd graph construction, since the model
+parameters carry |requires_grad=True|, but never calls
 |.backward()|.  It completes in $251\;\mu$s.  The full epoch
 (3{,}631~$\mu$s) costs $3{,}381\;\mu$s more: \textbf{93\%} of the
 total epoch time is spent inside PyTorch's C++ backward pass.  This is
@@ -704,15 +704,15 @@ Subtracting the typed forward cost ($18 \times 6.9 = 124\;\mu$s) from
 the forward-only time ($251\;\mu$s) leaves $127\;\mu$s attributable to
 PyTorch's tape construction: allocating |Node| objects, storing input
 pointers, and registering backward functions for each of the eight
-tensor operations in the two-layer network.  Real but modest---under a
+tensor operations in the two-layer network.  Meaningful, but under a
 quarter of the cost of the backward pass itself.
 
 \paragraph{Fold structure and Generic traversal: negligible.}
 Replacing |foldM| with an explicit |foldl'| chain changes the epoch
-time by $17\;\mu$s---within the noise floor.  GHC compiles both to the
+time by $17\;\mu$, within the noise floor.  GHC compiles both to the
 same loop at \texttt{-O2}.  Likewise, 18 calls to
-|flattenParameters|---the |Generic| traversal collecting the four model
-tensors into a list---complete in under $1\;\mu$s total ($<0.03\%$ of
+|flattenParameters| (the |Generic| traversal collecting the four model
+tensors into a list) complete in under $1\;\mu$s total ($<0.03\%$ of
 the epoch).
 
 \subsection*{Typed lens vs.\ HMatrix}

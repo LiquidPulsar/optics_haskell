@@ -23,9 +23,9 @@ module Conclusion where
 
 This thesis has instantiated the categorical framework of Cruttwell
 et al.~\citep{catlearning} as a working Haskell library for
-gradient-based machine learning.  The central abstraction---that every
+gradient-based machine learning.  The central abstraction, that every
 component of a training pipeline is a parametric lens carrying a forward
-pass and a gradient pass as a single composable unit---is realised here
+pass and a gradient pass as a single composable unit, is realised here
 with full static verification.  Tensor shapes, mini-batch sizes, compute
 devices, and element dtypes are all encoded as type-level parameters, so
 a misconfigured architecture is rejected by the type checker rather than
@@ -51,8 +51,8 @@ autoencoder architectures: encoder and decoder are each ordinary
 end-to-end model, trained on MNIST images with MSE reconstruction loss.
 Fifth, scaled dot-product self-attention and its multi-head
 generalisation are implemented as |ParaLens'| values with fully manually
-derived backward passes---including the rank-one Jacobian correction for
-the softmax non-linearity---extending the framework to the attention
+derived backward passes (including the rank-one Jacobian correction for
+the softmax non-linearity) extending the framework to the attention
 mechanism that underlies modern transformer architectures
 (Chapter~\ref{chap:layers}).  Sixth, residual skip connections are
 realised as a single higher-order combinator |skipPara|, built entirely
@@ -69,8 +69,8 @@ the zero-overhead property is verified directly by GHC Core inspection:
 compiling the lens-based forward pass and an equivalent hand-written
 forward pass with \texttt{-O2 -ddump-simpl} produces structurally
 identical worker functions, confirming that the entire |ParaLens|
-abstraction---composition, reparametrisation, the van Laarhoven
-|forall|---is absent from the optimised output
+abstraction: composition, reparametrisation, the van Laarhoven
+|forall|; is absent from the optimised output
 (Section~\ref{sec:zero-overhead}).
 
 \section{Future Work}
@@ -98,3 +98,32 @@ smooth Euclidean spaces.  Instantiating the Haskell library for a
 discrete CRDC (e.g., a category of Boolean circuits) or a probabilistic
 one would generalise gradient-based learning beyond the real-valued
 setting and test the abstraction boundaries of the current design.
+
+\section{Broader Impact}
+
+The primary benefit of this work is the promotion of a class of ML 
+configuration errors (shape mismatches, invalid device/dtype combinations, 
+architectural depth mistakes) from silent runtime failures to compile-time 
+rejections. In production or safety-critical deployments, such errors 
+currently surface only when code runs, at which point significant 
+computation may already have been wasted or, in embedded settings, harm 
+caused. Making them structurally impossible narrows the gap between what 
+a model is intended to compute and what it actually computes. That said, 
+the guarantees offered are narrow in scope: they address the mechanics 
+of gradient flow and tensor bookkeeping, not the behaviour of the resulting 
+model in deployment. A well-typed network trained on biased or 
+unrepresentative data remains biased; a shape-correct architecture can 
+produce confidently wrong predictions on out-of-distribution inputs. 
+The framework says nothing about data quality, label fairness, or 
+distributional shift — the issues that dominate the ethical literature 
+on ML systems. There is also an access consideration: the safety properties 
+described here are available only to practitioners fluent in Haskell, a 
+language with a substantially smaller and less diverse community than Python. 
+This is not ethically neutral; it means the benefits of static verification 
+are currently gated behind a significant learning barrier, reinforcing 
+existing stratification in who can build and audit ML infrastructure. A 
+productive long-term direction would be to export these ideas to mainstream 
+frameworks — whether through type-level extensions to Python's type system 
+or by generating typed interfaces automatically from existing model 
+definitions — making compile-time shape safety accessible without requiring 
+a change of language.

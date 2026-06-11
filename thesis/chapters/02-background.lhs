@@ -36,9 +36,9 @@ Haskell is a purely functional, statically typed language with lazy
 evaluation.  \emph{Pure} functions have no side effects: a function
 |f :: a -> b| maps every value of type |a| to a value of type |b|
 without reading or writing global state.  Purity makes programs
-compositional by default---the behaviour of a composition |f . g| is
-fully determined by the behaviours of |f| and |g| individually---which
-is the property the framework exploits to build large networks from
+compositional by default: the behaviour of a composition |f . g| is
+fully determined by the behaviours of |f| and |g| individually,
+which is the property the framework exploits to build large networks from
 small verified components.
 Five advanced type-system features support the framework: type classes for
 overloaded interfaces; the kind system and |DataKinds| for lifting tensor
@@ -50,7 +50,7 @@ synonyms for keeping signatures readable.
 
 The primary abstraction mechanism is the \emph{type class}: a class
 declares an interface and instances provide concrete implementations.
-Type class resolution is purely compile-time---GHC selects and inlines
+Type class resolution is purely compile-time: GHC selects and inlines
 the appropriate instance, leaving no dispatch overhead at runtime.
 This property is crucial in Section~\ref{sec:zero-overhead}, where
 the entire lens abstraction is shown to vanish in the compiled output.
@@ -72,8 +72,8 @@ device |dv|, with element type |dt|, and shape |[m, n]| is written:
 example :: T.Tensor dv dt [m, n]
 \end{code}
 
-\noindent All three properties---device |dv|, element dtype |dt|, and
-shape |[m, n]|---are resolved at compile time.  An attempt to multiply
+\noindent All three properties: device |dv|, element dtype |dt|, and
+shape |[m, n]|; are resolved at compile time.  An attempt to multiply
 a $[3,4]$ matrix by a $[5,6]$ matrix produces a type error before any
 code runs.  No runtime shape assertions are needed.  Throughout this
 thesis, type-level lists of |Nat| appear wherever tensor shapes are
@@ -116,8 +116,8 @@ type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 type |Lens s t a b| must work for \emph{any} |Functor| the caller
 chooses.  This is the van Laarhoven representation described in
 Section~\ref{sec:optics-bg}.  The higher-rank quantifier is the reason
-lenses compose with plain |(.)| --- the same function composes for any
-functor --- and is also the mechanism by which the lens abstraction
+lenses compose with plain |(.)|: the same function composes for any
+functor; and is also the mechanism by which the lens abstraction
 collapses to direct function calls when the functor is fixed at the
 call site (Section~\ref{sec:zero-overhead}).
 
@@ -159,7 +159,7 @@ supplied.
 % directly: chaining two lenses requires manually threading the getter
 % and setter, producing boilerplate that grows with nesting depth.
 % Van Laarhoven~\citep{van2009lens} showed that encoding both operations
-% as a single higher-rank function eliminates this problem---two lenses
+% as a single higher-rank function eliminates this problem: two lenses
 % then compose by plain function composition |(.)| with no glue code.
 % The central reason lenses appear throughout the framework is precisely
 % this composability.  The full derivation, including the |Identity| and
@@ -171,8 +171,8 @@ supplied.
 
 A \emph{neural network} is a parametric function $f_\theta : A \to B$
 indexed by a weight vector $\theta \in P$.  The network is composed
-from differentiable building blocks---affine maps, activation
-functions, normalisation layers---each with their own local parameters.
+from differentiable building blocks (affine maps, activation
+functions, normalisation layers), each with their own local parameters.
 Training adjusts $\theta$ to minimise a scalar loss
 $\mathcal{L}(f_\theta(x), y)$ over a dataset of labelled pairs
 $(x, y)$.
@@ -186,7 +186,7 @@ the canonical update rule is gradient descent:
   \qquad \eta > 0.
 \]
 Each step moves $\theta$ in the direction of steepest loss decrease.
-Practical optimisers---momentum, Adam, AdaGrad---modify this rule to
+Practical optimisers (e.g. momentum, Adam, AdaGrad) modify this rule to
 improve convergence, but all share the same structure: a function from
 current parameters and a gradient signal to updated parameters.  In
 this framework that function is itself a lens, described in
@@ -236,7 +236,7 @@ CRDC carries a \emph{natural addition} $+_A : A \times A \to A$,
 arising from the abelian group structure that CRDCs impose.  In the
 standard category of Euclidean spaces this is ordinary vector addition;
 in a category of boolean circuits it would be a different, discrete
-operation---the abstraction is independent of the specific category.
+operation: the abstraction is independent of the specific category.
 
 The training loop performs precisely this natural addition:
 \[
@@ -245,7 +245,7 @@ The training loop performs precisely this natural addition:
 where $\partial\theta$ is whatever the backward pass emits.  This is
 not an implementation convention but the structural update rule of the
 CRDC.  Whether the step is gradient \emph{descent} or
-\emph{ascent}---and at what scale---is determined entirely by the sign
+\emph{ascent}, and at what scale, is determined entirely by the sign
 and magnitude of $\partial\theta$, which the learning-rate cap
 (Section~\ref{sec:losscaps}) controls by injecting a positive or negative
 seed into the backward pass.  No modification to the update rule itself
@@ -348,7 +348,7 @@ instance Functor (Const m) where
 \end{code}
 
 Applying |Identity| to |modF| yields |modF :: (a -> Identity a) -> s -> Identity s|,
-isomorphic to |mod|---all that is left is wrapping and unwrapping the
+isomorphic to |mod|! All that is left is wrapping and unwrapping the
 |Identity|\footnote{This has no runtime cost thanks to the semantics of
 \texttt{newtype} and \texttt{coerce}\cite{breitner2014safe}.}.
 

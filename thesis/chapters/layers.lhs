@@ -21,8 +21,8 @@ module Layers where
 
 Each concrete neural network layer is a term of type |ParaLens'| or |Lens'|,
 directly instantiating the wire diagram of Section~\ref{sec:wirediagrams}.
-The guiding principle is simple: \emph{stateless} transformations---those with no
-learnable parameters---are plain |Lens'| values with no vertical parameter wires;
+The guiding principle is simple: \emph{stateless} transformations, those with no
+learnable parameters, are plain |Lens'| values with no vertical parameter wires;
 \emph{stateful} ones are |ParaLens'| values whose parameter type holds the
 learnable tensors.  This distinction is enforced at the type level and is not a
 matter of convention.
@@ -30,8 +30,8 @@ matter of convention.
 \section{Linear Layer and Bias}
 
 The linear layer is the framework's core building block; its backward
-pass establishes the gradient-flow pattern---getter computes the forward
-output, setter returns gradients for both weights and inputs---that
+pass establishes the gradient-flow pattern (getter computes the forward
+output, setter returns gradients for both weights and inputs) that
 every subsequent layer follows.
 
 The weight matrix alone constitutes a |ParaLens'| whose parameter is a
@@ -85,8 +85,8 @@ matMulLensCore = linear .#. addLens
 
 \noindent The combined parameter |(Tensor [o,i], Tensor [o])| arises
 automatically from the composition rule: the product parameter type requires
-no manual construction.  The full backward pass---computing both $\partial
-L/\partial W$, $\partial L/\partial b$, and $\partial L/\partial x$---is wired
+no manual construction.  The full backward pass, computing both $\partial
+L/\partial W$, $\partial L/\partial b$, and $\partial L/\partial x$, is wired
 together from the two constituent lenses without any additional code.
 
 Throughout the case studies a convenience alias |matMulLens| is used,
@@ -199,7 +199,7 @@ for unit stride and zero padding at the type level.  A kernel or input of the
 wrong spatial size is a compile-time type error rather than a runtime failure.
 
 The backward pass is split into two computations.  The gradient with respect to
-the input is obtained via the transposed convolution---the adjoint of the forward
+the input is obtained via the transposed convolution, the adjoint of the forward
 operator:
 \[
   \tfrac{\partial L}{\partial x} \;=\; \mathit{convTranspose2d}(\mathit{kernel},\; \mathit{grad})
@@ -257,8 +257,8 @@ forming a residual shortcut around the learned transformation.  In the
 parametric lens framework this is a \emph{higher-order} combinator: given
 any endomorphic layer $f :: \texttt{ParaLens' p a a}$, the wrapped
 layer computes $y = f(x) + x$ and the combined parameter type is unchanged.
-Gradients flow back through two paths simultaneously---one through $f$, one
-through the identity---and are summed at the input:
+Gradients flow back through two paths simultaneously (one through $f$, one
+through the identity) and are summed at the input:
 \[
   \tfrac{\partial L}{\partial x}
   = \underbrace{\tfrac{\partial L}{\partial y} \cdot f'(x)}_{\text{through }f}
@@ -284,23 +284,23 @@ skipPara f = rightLens splitIso . from rotate . alongside f id . from splitIso
 \noindent Reading the chain left to right: |rightLens splitIso| fans the
 data wire $a$ to $(a, a)$ while leaving the parameter wire $p$ intact;
 |from rotate| rearranges $(p, (a, a))$ into $((p, a), a)$ so that
-|alongside| can feed one copy to |f|---together with its parameters---and
+|alongside| can feed one copy to |f|, together with its parameters, and
 the other to |id|; the focus of |alongside f id| is the pair $(f(x),\, x)$;
 |from splitIso| sums the pair to produce $f(x) + x$ in the forward direction.
 
 The backward pass is the exact mirror of the forward pass, and no
 additional gradient logic is needed.
 |from splitIso|{}'s \emph{setter} distributes $\partial L/\partial y$ to
-both branches---precisely because its \emph{getter} summed them in the
+both branches, precisely because its \emph{getter} summed them in the
 forward direction.  Symmetrically, |rightLens splitIso|{}'s \emph{setter}
-sums the two arriving input gradients into $\partial L/\partial x$---because
+sums the two arriving input gradients into $\partial L/\partial x$, because
 its \emph{getter} fanned $x$ to two copies going forward.
 
 This duality is not coincidental: every Van Laarhoven lens encodes its
 forward computation in the getter and its inverse (in the CRDC sense) in
 the setter.  Placing |splitIso| at one end of the chain and |from
 splitIso| at the other is precisely what flips their roles under the two
-specialisations of the functor $f$---getter for the forward pass,
+specialisations of the functor $f$: getter for the forward pass,
 setter for the backward pass.  The residual gradient formula
 $\partial L/\partial x = \partial L/\partial x\vert_f + \partial L/\partial y$
 emerges for free from the lens structure; it is not written anywhere in
@@ -328,8 +328,8 @@ inner pipeline.
 %   .#. matMulLens . sigmoid
 % \end{code}
 
-% \noindent The full parameter type---input projection, product of block
-% parameters, output projection---is inferred entirely from the composition,
+% \noindent The full parameter type (input projection, product of block
+% parameters, output projection) is inferred entirely from the composition,
 % with no manual tuple construction.
 
 \subsection*{Projection Skips}
@@ -365,7 +365,7 @@ formula $\partial L/\partial x
 = \partial L/\partial x\vert_f + \partial L/\partial x\vert_P$
 falls out automatically, for the same reason as in |skipPara|.
 Passing |toPara id| for |proj| recovers the identity-shortcut
-case---the skip path contributes no learnable parameters and the
+case: the skip path contributes no learnable parameters and the
 combined type simplifies accordingly.
 
 \section{Attention}
@@ -373,8 +373,8 @@ combined type simplifies accordingly.
 Self-attention is the most structurally complex layer in this chapter: the
 output at every position is a weighted average of all other positions, with
 weights that are themselves a differentiable function of the input.
-Despite this non-linearity the layer is \emph{stateful}---four square
-projection matrices are its learnable parameters---and it fits into the
+Despite this non-linearity the layer is \emph{stateful} (four square
+projection matrices are its learnable parameters), and it fits into the
 |ParaLens'| abstraction without modification.  The parameter type groups
 the four matrices in a tuple:
 
@@ -405,7 +405,7 @@ selfAttention  ::  ( T.All KnownNat [b, s, e]
 \end{code}
 
 % \noindent The equality |(b * (s * e)) ~ ((b * s) * e)| cannot be discharged
-% automatically by GHC's type-level arithmetic---the solver does not apply
+% automatically by GHC's type-level arithmetic: the solver does not apply
 % associativity of multiplication without an explicit witness.  It must be
 % named in the constraint to justify the |reshape| to $[b{\cdot}s,\; e]$
 % inside the weight-gradient helper.
@@ -544,8 +544,8 @@ and |scale'| denoting multiplication by $1/\sqrt{e}$, is:
 \paragraph{Multi-head attention.}
 |multiHeadSelfAttention| partitions the embedding dimension across $h$
 independent attention heads, each of width $\mathit{hd} = e / h$, enforced
-at the type level by |e ~ h * hd|.  The parameter type is unchanged---the
-weight matrices remain $[e, e]$ and operate on the full embedding---but two
+at the type level by |e ~ h * hd|.  The parameter type is unchanged (the
+weight matrices remain $[e, e]$ and operate on the full embedding), but two
 reshape helpers split and merge the head dimension around the attention
 computation:
 

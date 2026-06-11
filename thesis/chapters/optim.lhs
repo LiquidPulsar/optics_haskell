@@ -21,7 +21,7 @@ module Optim where
 
 A layer such as |matMulLensCore| knows how to compute gradients with
 respect to its weights but not what to \emph{do} with them.  The
-gradient update rule---gradient descent, momentum, Adam---is a separate
+gradient update rule (gradient descent, momentum, Adam) is a separate
 concern, and the framework keeps it separate.  Optimisers are lenses
 plugged into the parameter slot of a layer via |repara|
 (Section~\ref{sec:repara}), converting raw gradients into updated
@@ -169,7 +169,7 @@ original Adam paper~\citep{kingma2017adammethodstochasticoptimization},
 using the raw moments $m'$ and $v'$ directly.  The effect is negligible
 once training is established; including correction would require
 threading a step counter through the optimiser state, adding a type
-parameter beyond what the thesis examples require---and beyond the
+parameter beyond what the thesis examples require; and beyond the
 original Cruttwell et al.\ framework \citep{catlearning}.
 
 The deepened state type |((m, v), p)| vs |Momentum|'s |(v, p)| is
@@ -189,7 +189,7 @@ net  =   repara (momentum 0.9)    matMulLensCore
 \end{code}
 
 \noindent The combined parameter type is
-$((v,p_1),\,(g,p_2))$---each layer carries its own independent optimiser
+$((v,p_1),\,(g,p_2))$: each layer carries its own independent optimiser
 state, tracked automatically through the product type from |(.#.)|.  No
 global optimiser object is needed; the type system enforces that each
 layer's update rule stays local.

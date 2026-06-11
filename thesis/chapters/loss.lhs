@@ -40,7 +40,7 @@ ParaLens' (t shape) (t shape) (t [])
 \noindent
 Reading the three type arguments: the \emph{parameter} |p = t shape| is
 the target tensor; the \emph{input} |a = t shape| is the network's
-prediction; and the \emph{output} |b = t []| is a scalar---a
+prediction; and the \emph{output} |b = t []| is a scalar: a
 zero-dimensional tensor carrying a single floating-point number.
 
 The loss reduces the network's prediction to a scalar, but it does not
@@ -53,8 +53,8 @@ with a loss |loss| via |(.#.)| gives a term whose output is still
   \text{|ParaLens' (net_params, t shape) (t input_shape) (t [])|}.
 \]
 
-The true \emph{cap}---the morphism that closes the final wire to the
-monoidal unit $I = \mathtt{()}$---is the learning rate.  The library
+The true \emph{cap}, the morphism that closes the final wire to the
+monoidal unit $I = \mathtt{()}$, is the learning rate.  The library
 formalises this as a type synonym:
 
 \begin{code}
@@ -86,7 +86,7 @@ lrSmoothT lr = learningRate (const (negate (scalarT lr)))
   :: ParaLens' (net_params, target) input ()
 \end{code}
 
-\noindent The output type is now |()| --- the monoidal unit --- so no
+\noindent The output type is now |()|, the monoidal unit, so no
 information leaves the diagram in the forward direction.  The backward
 pass flows $-\mathit{lr}$ back through every layer as the gradient seed,
 updating all weight tensors in a single traversal.  The |withGradDesc|
@@ -121,8 +121,8 @@ $\tfrac{2}{N}$ factor arises from differentiating $\tfrac{1}{N}\sum_i
 (unnormalised) loss, breaking equivalence with standard automatic
 differentiation frameworks.  The negative sign is not a convention
 trick; it is the mechanism by which the additive CRDC structure produces
-descent rather than ascent.  Choosing $\alpha > 0$ gives ascent; the library includes |deepDreamLoss|---a
-dot-product loss $\langle t, p\rangle$ with symmetric gradients---to support
+descent rather than ascent.  Choosing $\alpha > 0$ gives ascent; the library includes |deepDreamLoss| (a
+dot-product loss $\langle t, p\rangle$ with symmetric gradients) to support
 activation-maximisation settings without any change to the training loop.
 
 \section{Mean-Squared Error: \texttt{lossSmooth}}
@@ -139,7 +139,7 @@ lossSmooth
 \end{code}
 
 \noindent The constraint alias |TrivialFacts shape| captures two
-hasktorch API requirements---
+hasktorch API requirements
 
 \begin{code}
 type TrivialFacts shape =
@@ -147,7 +147,7 @@ type TrivialFacts shape =
   , shape ~ T.Reverse (T.Reverse shape) )
 \end{code}
 
-\noindent---that are semantically trivial (every shape satisfies them)
+---that are semantically trivial (every shape satisfies them)
 but must be supplied as explicit witnesses to satisfy the type-checker
 when calling |T.sub| and |T.mul|.
 
@@ -205,8 +205,8 @@ softMaxCELoss = lens fwd rev
   \qquad q = \operatorname{softmax}(p),
 \]
 the standard categorical cross-entropy averaged over the batch.
-Throughout, the |@1| type application selects axis~1---the class
-dimension---so that softmax and the summation operate over classes
+Throughout, the |@1| type application selects axis~1 (class
+dimension) so that softmax and the summation operate over classes
 while leaving axis~0 (the batch) intact.
 
 The backward pass exploits the well-known simplification that arises
