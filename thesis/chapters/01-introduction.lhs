@@ -67,85 +67,43 @@ proof-of-concept that accompanies Cruttwell et al.~\cite{catlearning}:
 
 \begin{enumerate}
 
-  \item \textbf{Statically typed tensor shapes.}
-    Tensor dimensions are encoded as type-level natural numbers via
-    GHC's \texttt{DataKinds} extension.  A matrix multiply or
-    convolution that receives a tensor of the wrong shape is rejected
-    at compile time, not at runtime.  The original Python
-    implementation performs no shape checking.
-
-  \item \textbf{Batching as a type parameter.}
-    The mini-batch size $b$ is a type-level \texttt{Nat}.  All model
-    signatures are polymorphic in $b$; a mismatch between the batch
-    size declared in the model type and the batch size of the input
-    data is a compile-time type error.
-
-  \item \textbf{Device and dtype polymorphism.}
-    A single model definition is polymorphic over the compute device
-    (CPU, CUDA) and element dtype (32-bit float, 64-bit double).
-    Switching from CPU to GPU or from single to double precision
-    requires only a change to the type application at the call site.
-    Constraint synonyms prevent invalid device/dtype combinations from
-    type-checking.
-
-  % \item \textbf{Convolutional and pooling architectures.}
-  %   The Cruttwell et al.\ framework is extended beyond dense layers to
-  %   include convolutions and max-pooling.  Convolution output shapes
-  %   (kernel size, stride, and padding are all type-level tuples) are
-  %   inferred by type families, so architectural mismatches are
-  %   compile-time errors.
-
-  \item \textbf{Autoencoder architectures.}
-    The framework is extended to autoencoder networks, where encoder and
-    decoder are each ordinary |ParaLens'| pipelines that compose with
-    |(.#.)| into a single end-to-end model.  The bottleneck constraint
-    (a latent dimension smaller than the input) is enforced at the type
-    level with no special-casing: the composition rule handles the
-    dimension change identically to any other layer transition.  The
-    model is trained on MNIST images with MSE reconstruction loss,
-    demonstrating that the framework is not limited to discriminative tasks.
-
-  \item \textbf{Skip connections as a combinator.}
-    Residual shortcut connections are expressed as a single higher-order
-    combinator |skipPara :: ParaLens' p a a -> ParaLens' p a a|, built
-    entirely from existing primitives---|splitIso|, |from rotate|,
-    |alongside|, and |from splitIso|---with no new lens axioms.
-    The identity gradient path, which ensures gradients reach early
-    layers even when the learned branch saturates, emerges automatically
-    from the combinator structure: no separate backward-pass derivation
-    is required.  Stacking |skipPara|-wrapped blocks via |stackN| yields
-    a residual network whose full parameter type is inferred by the
-    type system.
-
-  \item \textbf{Attention as a \texttt{ParaLens'}.}
-    Scaled dot-product self-attention and its multi-head generalisation are
-    implemented as |ParaLens'| values with fully manually derived backward
-    passes, including the rank-one Jacobian correction for the softmax
-    non-linearity.  The multi-head variant enforces the constraint
-    $e = h \cdot \mathit{hd}$ at the type level via GHC's equality
-    constraints, so a head-count or embedding-dimension mismatch is a
-    compile-time error rather than a silent shape failure at runtime.
+  \item \textbf{Static type safety for tensor computation.}
+    Tensor shapes, mini-batch sizes, compute devices, and element
+    dtypes are all encoded as type-level parameters via GHC's
+    \texttt{DataKinds} extension and constraint synonyms.
+    Shape mismatches, wrong batch sizes, and invalid device/dtype
+    combinations are compile-time errors; the original Python
+    implementation performs no such checking.
 
   \item \textbf{Type-level variable network depth.}
-    The \texttt{Stack.hs} module uses type-level Peano naturals and
-    typeclass induction to build networks of depth $n$ whose parameter
-    type is a fully concrete nested tuple at each $n$.  This preserves
-    GHC's ability to specialise and unbox the entire parameter
-    structure, yielding zero overhead relative to a hand-written
-    network of the same depth.
+    The \texttt{Stack.hs} module uses Peano naturals and typeclass
+    induction to build networks of depth $n$ whose parameter type is a
+    fully concrete nested tuple at each $n$, preserving GHC's ability
+    to specialise and unbox the entire parameter structure with zero
+    overhead relative to a hand-written network of the same depth.
 
-  % \item \textbf{Per-layer optimisers via the product type.}
-  %   Because the composition operator \texttt{(.{}\#{}.)} builds the
-  %   combined parameter type as a product, different layers can carry
-  %   different optimiser states (momentum buffer, gradient accumulator,
-  %   Adam moments) with no global optimiser object and no explicit
-  %   parameter grouping.  The type system enforces that each layer's
-  %   update rule is local.
+  \item \textbf{Extended architecture support.}
+    The framework is extended beyond the MLP scope of the original
+    paper in two directions: autoencoders, where encoder and decoder
+    are ordinary |ParaLens'| pipelines composed end-to-end via
+    |(.#.)| with the bottleneck enforced at the type level; and
+    residual networks, where skip connections are expressed as a
+    single higher-order combinator |skipPara| built entirely from
+    existing lens primitives, with the identity gradient path emerging
+    automatically from the combinator structure.
+
+  \item \textbf{Attention as a \texttt{ParaLens'}.}
+    Scaled dot-product self-attention and its multi-head generalisation
+    are implemented with fully hand-derived backward passes, including
+    the rank-one Jacobian correction for the softmax non-linearity.
+    The constraint $e = h \cdot \mathit{hd}$ is enforced at the type
+    level, so a head-count or embedding-dimension mismatch is a
+    compile-time error rather than a silent shape failure at runtime.
 
   \item \textbf{Zero-overhead evidence via GHC Core.}
     Compiling the lens-based forward pass and an equivalent
     hand-written forward pass with \texttt{-O2 -ddump-simpl} produces
-    structurally identical worker functions.  The entire
+    structurally identical worker functions: the entire
     \texttt{ParaLens} abstraction---composition, reparametrisation,
     the van Laarhoven \texttt{forall}---is absent from the optimised
     output.
@@ -169,3 +127,7 @@ studies, including the GHC Core zero-overhead evidence and the
 type-level depth experiment.
 Chapter~\ref{chap:conclusion} concludes and outlines directions for
 future work.
+
+\paragraph{Source code.}
+The full implementation is available at
+\url{https://github.com/LiquidPulsar/optics_haskell/tree/static}.

@@ -151,3 +151,15 @@ splitPara p = p . splitIso
 skipPara :: Num a => ParaLens' p a a -> ParaLens' p a a
 skipPara f = rightLens splitIso . from rotate . alongside f id . from splitIso
 {-# INLINE skipPara #-}
+
+projSkipPara' :: forall a a' b b' p p' . (Num a, Num a', Num b, Num b') => ParaLens p p' a a' b b' -> Lens a a' b b' -> ParaLens p p' a a' b b'
+projSkipPara' f proj = rightLens splitIso . from rotate . alongside f proj . from splitIso
+
+projSkipPara :: forall a a' b b' p p' q q' . (Num a, Num a', Num b, Num b') => ParaLens p p' a a' b b' -> ParaLens q q' a a' b b' -> ParaLens (p,q) (p',q') a a' b b'
+projSkipPara f proj = rightLens splitIso . r . alongside f proj . from splitIso
+  where
+    r :: Iso ((p,q),(a,a)) ((p',q'),(a',a')) ((p,a),(q,a)) ((p',a'),(q',a'))
+    r = iso fwd rev
+      where
+        fwd ((p,q),(a,a2)) = ((p,a),(q,a2))
+        rev ((p',a'),(q',a2')) = ((p',q'),(a',a2'))

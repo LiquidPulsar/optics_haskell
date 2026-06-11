@@ -200,6 +200,12 @@ leftUnit :: Iso ((),a) ((),a') a a'
 leftUnit = iso snd ((),)
 \end{code}
 
+\noindent Here |Iso s t a b| is the van~Laarhoven type for an isomorphism
+between |(s, t)| and |(a, b)|, exported by \texttt{Control.Lens}~\cite{ekmett2025lens};
+|iso :: (s -> a) -> (b -> t) -> Iso s t a b| constructs one from a pair of
+inverse functions.  |leftUnit| is built from |snd :: ((), a) -> a| (the
+forward direction) and |((),) :: a -> ((), a)| (the backward direction).
+
 Composing |leftUnit| on the left of any lens rearranges the source pair so
 that the trivial parameter slot disappears from the type. Symmetrically,
 |rightUnit| handles the case where the unit appears on the right:

@@ -31,35 +31,45 @@ devices, and element dtypes are all encoded as type-level parameters, so
 a misconfigured architecture is rejected by the type checker rather than
 failing at runtime or producing a silent numerical error.
 
-The library extends the original Python proof-of-concept in five concrete
-directions.  First, all implementations are written in batched form from
-the ground up: every layer, loss function, and optimiser operates over a
-leading batch dimension $b$ that is a type-level \texttt{Nat}, whereas
-the original Cruttwell et al.\ implementation processes a single example
-at a time.  Second, all tensor dimensions are static: GHC's
-\texttt{DataKinds} extension encodes every dimension as a type-level
-\texttt{Nat}, and type families compute output shapes for convolutions
-and pooling layers automatically, making spatial mismatches compile-time
-errors (Chapter~\ref{chap:layers}).  Third, device and dtype polymorphism
-are built into every model signature: a single |ParaLens'| definition is
-valid on CPU or CUDA and in 32-bit or 64-bit floating point, with
-constraint synonyms such as |SaneDT| preventing invalid device/dtype
-combinations from type-checking.  Fourth, the framework is extended
-beyond the MLP scope of the original paper to autoencoder architectures:
-encoder and decoder are each ordinary |ParaLens'| pipelines that compose
-with |(.#.)| into a single end-to-end model, trained on MNIST images
-with MSE reconstruction loss.  Fifth, scaled dot-product self-attention
-and its multi-head generalisation are implemented as |ParaLens'| values
-with fully manually derived backward passes---including the rank-one
-Jacobian correction for the softmax non-linearity---extending the
-framework to the attention mechanism that underlies modern transformer
-architectures (Chapter~\ref{chap:layers}).
-
-The zero-overhead property of the abstraction is verified directly by
-GHC Core inspection.  Compiling the Iris lens-based model alongside an
-equivalent hand-rolled forward pass with \texttt{-O2 -ddump-simpl}
-produces structurally identical worker functions: the entire |ParaLens|
-machinery---composition, reparametrisation, the van Laarhoven
+The library extends the original Python proof-of-concept in eight
+concrete directions.  First, all implementations are written in batched
+form from the ground up: every layer, loss function, and optimiser
+operates over a leading batch dimension $b$ that is a type-level
+\texttt{Nat}, whereas the original Cruttwell et al.\ implementation
+processes a single example at a time.  Second, all tensor dimensions are
+static: GHC's \texttt{DataKinds} extension encodes every dimension as a
+type-level \texttt{Nat}, and type families compute output shapes for
+convolutions and pooling layers automatically, making spatial mismatches
+compile-time errors (Chapter~\ref{chap:layers}).  Third, device and
+dtype polymorphism are built into every model signature: a single
+|ParaLens'| definition is valid on CPU or CUDA and in 32-bit or 64-bit
+floating point, with constraint synonyms such as |SaneDT| preventing
+invalid device/dtype combinations from type-checking.  Fourth, the
+framework is extended beyond the MLP scope of the original paper to
+autoencoder architectures: encoder and decoder are each ordinary
+|ParaLens'| pipelines that compose with |(.#.)| into a single
+end-to-end model, trained on MNIST images with MSE reconstruction loss.
+Fifth, scaled dot-product self-attention and its multi-head
+generalisation are implemented as |ParaLens'| values with fully manually
+derived backward passes---including the rank-one Jacobian correction for
+the softmax non-linearity---extending the framework to the attention
+mechanism that underlies modern transformer architectures
+(Chapter~\ref{chap:layers}).  Sixth, residual skip connections are
+realised as a single higher-order combinator |skipPara|, built entirely
+from existing lens primitives with no new axioms; the identity gradient
+path that ensures gradients reach early layers even when the learned
+branch saturates emerges automatically from the combinator structure,
+requiring no separate backward-pass derivation (Section~\ref{sec:skipconnections}).
+Seventh, type-level Peano naturals and typeclass induction are used to
+build networks of variable depth $n$ whose parameter type is a fully
+concrete nested tuple at each $n$, preserving GHC's ability to
+specialise and unbox the entire parameter structure and yielding zero
+overhead relative to a hand-written network of the same depth.  Eighth,
+the zero-overhead property is verified directly by GHC Core inspection:
+compiling the lens-based forward pass and an equivalent hand-written
+forward pass with \texttt{-O2 -ddump-simpl} produces structurally
+identical worker functions, confirming that the entire |ParaLens|
+abstraction---composition, reparametrisation, the van Laarhoven
 |forall|---is absent from the optimised output
 (Section~\ref{sec:zero-overhead}).
 

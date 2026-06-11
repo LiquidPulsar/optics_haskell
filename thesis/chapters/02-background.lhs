@@ -48,25 +48,12 @@ synonyms for keeping signatures readable.
 
 \subsection*{Type Classes}
 
-The primary abstraction mechanism is the \emph{type class}.  A class
-declares an interface; instances provide concrete implementations:
-
-\begin{code}
-class Functor f where
-    fmap :: (a -> b) -> f a -> f b
-
-instance Functor Maybe where
-    fmap f (Just x)  = Just (f x)
-    fmap _ Nothing   = Nothing
-\end{code}
-
-\noindent In ordinary use, type class resolution is purely compile-time:
-GHC selects the appropriate instance and may inline it, leaving no dispatch
-overhead at runtime.  This means that when |fmap| is specialised to a
-concrete |f|, GHC can inline the specific implementation and optimise
-it away.  This property is crucial in Section~\ref{sec:zero-overhead}
-where the entire lens abstraction is shown to vanish in the compiled
-output.
+The primary abstraction mechanism is the \emph{type class}: a class
+declares an interface and instances provide concrete implementations.
+Type class resolution is purely compile-time---GHC selects and inlines
+the appropriate instance, leaving no dispatch overhead at runtime.
+This property is crucial in Section~\ref{sec:zero-overhead}, where
+the entire lens abstraction is shown to vanish in the compiled output.
 
 \subsection*{The Kind System and DataKinds}
 
@@ -154,30 +141,30 @@ separately.  Constraint synonyms keep type signatures concise, and the
 type checker verifies the full set when a concrete |dv| and |dt| are
 supplied.
 
-\section{Optics}
-\label{sec:optics-bg}
+% \section{Optics}
+% \label{sec:optics-bg}
 
-An \emph{optic} is a composable interface for accessing and modifying
-a sub-component of a data structure.  The simplest optic is a
-\emph{lens}, which focuses on a single sub-component.  Concretely, a
-lens is a getter paired with a setter:
+% An \emph{optic} is a composable interface for accessing and modifying
+% a sub-component of a data structure.  The simplest optic is a
+% \emph{lens}, which focuses on a single sub-component.  Concretely, a
+% lens is a getter paired with a setter:
 
-\begin{code}
-data Lens s a = Lens
-  { view :: s -> a
-  , set  :: s -> a -> s }
-\end{code}
+% \begin{code}
+% data Lens s a = Lens
+%   { view :: s -> a
+%   , set  :: s -> a -> s }
+% \end{code}
 
-\noindent This representation is straightforward but does not compose
-directly: chaining two lenses requires manually threading the getter
-and setter, producing boilerplate that grows with nesting depth.
-Van Laarhoven~\citep{van2009lens} showed that encoding both operations
-as a single higher-rank function eliminates this problem---two lenses
-then compose by plain function composition |(.)| with no glue code.
-The central reason lenses appear throughout the framework is precisely
-this composability.  The full derivation, including the |Identity| and
-|Const| functor trick, the polymorphic generalisation, and the lens
-laws, is given in Section~\ref{sec:lenses}.
+% \noindent This representation is straightforward but does not compose
+% directly: chaining two lenses requires manually threading the getter
+% and setter, producing boilerplate that grows with nesting depth.
+% Van Laarhoven~\citep{van2009lens} showed that encoding both operations
+% as a single higher-rank function eliminates this problem---two lenses
+% then compose by plain function composition |(.)| with no glue code.
+% The central reason lenses appear throughout the framework is precisely
+% this composability.  The full derivation, including the |Identity| and
+% |Const| functor trick, the polymorphic generalisation, and the lens
+% laws, is given in Section~\ref{sec:lenses}.
 
 \section{Neural Networks and Gradient-Based Learning}
 \label{sec:nn-bg}
@@ -260,9 +247,173 @@ not an implementation convention but the structural update rule of the
 CRDC.  Whether the step is gradient \emph{descent} or
 \emph{ascent}---and at what scale---is determined entirely by the sign
 and magnitude of $\partial\theta$, which the learning-rate cap
-(Section~\ref{sec:lrcap}) controls by injecting a positive or negative
+(Section~\ref{sec:losscaps}) controls by injecting a positive or negative
 seed into the backward pass.  No modification to the update rule itself
 is required to switch between the two modes.
+
+
+%include polycode.fmt
+
+%% ── Format directives ────────────────────────────────────────────────────────
+%% Symbolic operators rendered as math
+%format ->          = "\to"
+%format =>          = "\Rightarrow"
+%format forall      = "\forall"
+%format <$>         = "\mathbin{\langle\$\rangle}"
+%format `div`       = "\mathbin{\div}"
+
+%% Named variables → Greek / math letters (use these names in code blocks)
+%format phi         = "\phi"
+%format alpha       = "\alpha"
+
+%% Lens type operators
+%format Lens'       = "\mathit{Lens}^{\prime}"
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\section{Lenses and Optics}
+\label{sec:lenses}
+
+Compound data structures are ubiquitous in modern programming, and their
+inherent modularity is key to building and reasoning with complex ensembles.
+Lenses\cite{foster2005combinators} are one approach to solve the problem of
+accessing the components of such structures, also known as the
+\textit{view-update problem}\cite{updatesemantics}.
+
+\subsection{Origins}
+
+A simple lens from outer type $S$ to inner type $A$ (which we shall denote as
+|Lens' s a| for reasons that will become apparent) can be thought of as
+comprising\cite{foster2005combinators} a function |view :: s -> a| which
+projects the component $A$, and a function |update :: s -> a -> s| which
+accepts a new value of $A$ and uses it to modify a given $S$.
+
+\begin{code}
+data Lens' s a = Lens' {view :: s -> a,  update  :: s -> a -> s}
+\end{code}
+
+As a concrete example, consider the relationship between the following
+|Account| and |PhoneNumber| data types:
+
+\begin{code}
+newtype PhoneNumber  = PhoneNumber Int
+newtype Account      = Account
+    {  phone      :: PhoneNumber
+    ,  accountId  :: Int
+    }
+
+acctToPhone :: Lens' Account PhoneNumber
+acctToPhone = Lens' view update
+  where
+    view    :: Account -> PhoneNumber
+    view    = phone
+
+    update  :: Account -> PhoneNumber -> Account
+    update acct num = acct { phone = num }
+\end{code}
+
+\subsection{Van Laarhoven Lenses}
+\label{sec:optics-bg}
+
+It is tempting to extend our |Lens| type with a modification function
+|mod :: (a -> a) -> s -> s|\cite{peytonjones2013lenses}. This begs the
+question: at what point do we stop? We could usefully include
+|modM :: (a -> Maybe a) -> s -> Maybe s|, or even
+|modIO :: (a -> IO a) -> s -> IO s|. Before letting this get out of hand, we
+observe that both share the structure of a |Functor|, yielding
+|modF :: Functor f => (a -> f a) -> s -> f s|.
+
+As a quick refresher, the category of |Functor|s\cite{haskell2010,
+haskell-base-functor} supports the lifting of an arbitrary function into their
+type. In Haskell terms:
+
+\begin{code}
+class Functor f where
+    fmap :: (a -> b) -> f a -> f b
+\end{code}
+
+By careful choice of specific |Functor|s we can recover |view|, |mod|, and
+|update|. Note that providing |const a| to |mod| recovers |update|, so we need
+only produce the first two. The key choices are~\cite{ghc_internal_identity,
+ghc_internal_const}:
+
+\begin{code}
+newtype Identity  a    = Identity  {  runIdentity  :: a    }
+newtype Const     a b  = Const     {  getConst     :: a    }
+
+instance Functor Identity where
+    fmap f (Identity x) = Identity (f x)
+
+instance Functor (Const m) where
+    fmap _ (Const v) = Const v
+\end{code}
+
+Applying |Identity| to |modF| yields |modF :: (a -> Identity a) -> s -> Identity s|,
+isomorphic to |mod|---all that is left is wrapping and unwrapping the
+|Identity|\footnote{This has no runtime cost thanks to the semantics of
+\texttt{newtype} and \texttt{coerce}\cite{breitner2014safe}.}.
+
+Applying |Const a| to |modF| yields
+|modF :: (a -> Const a a) -> s -> Const a s|,
+isomorphic to |(a -> a) -> s -> a|, which when provided |id| is exactly |view|.
+
+Thus a |Lens'| only needs |modF|, and we can simplify to the type alias:
+
+\begin{code}
+type Lens' s a = forall f . Functor f => (a -> f a) -> s -> f s
+\end{code}
+
+This representation also lets GHC apply aggressive optimisations for
+higher-order functions, which will matter as we compose increasingly complex
+lenses.
+
+It is often convenient to allow the types in the reverse direction to differ
+from those in the forward direction, yielding
+|update :: s -> b -> t| for fresh types $B$ and $T$:
+
+\begin{code}
+data Lens s t a b = Lens {view :: s -> a,  update  :: s -> b -> t}
+\end{code}
+
+In the Van Laarhoven style~\cite{ekmett2025lens}:
+
+\begin{code}
+type Lens s t a b  = forall f . Functor f => (a -> f b) -> s -> f t
+type Lens' s a     = Lens s s a a
+
+lens :: (s -> a) -> (s -> b -> t) -> Lens s t a b
+-- Note: fmap written infix
+lens sa sbt afb s = sbt s <$> afb (sa s)
+\end{code}
+
+\subsection{Composition and Modularity}
+
+The Van Laarhoven encoding gives composition for free. Given:
+
+\begin{code}
+x  :: Lens s t a b  -- forall f . Functor f => (a -> f b) -> (s -> f t)
+y  :: Lens a b c d  -- forall f . Functor f => (c -> f d) -> (a -> f b)
+\end{code}
+
+Standard function composition |(.)| has type |(b -> c) -> (a -> b) -> (a -> c)|,
+so |x . y| unifies immediately:
+
+\begin{code}
+-- x . y :: Lens s t c d
+--        = forall f . Functor f => (c -> f d) -> (s -> f t)
+\end{code}
+
+No glue code required: composing lenses with |(.)| is simply function
+composition. This allows compound accessors to be built from primitives without
+any overhead.
+
+\subsection{Final Note}
+
+So far we have considered only lenses whose focus is a concrete field of a
+record, as with |PhoneNumber| inside |Account|. This is not a requirement, and
+in subsequent sections we will see that machine learning layers can themselves
+be expressed as more exotic lenses.
+
+
 
 \section{Related Work}
 \label{sec:relatedwork}
@@ -279,7 +430,7 @@ framework on small MLP examples.
 
 The accompanying implementation is intentionally minimal: it is
 dynamically typed, operates on single examples rather than batches, and
-covers only dense layers.  
+covers only dense layers and convolutions.  
 
 Importantly, the implementation in Python (whilst a natural choice for ease of development) 
 does not fulfil the original intentions of the lens design in terms of efficient composition. 
@@ -291,7 +442,8 @@ reasoning capabilities we can eliminate all overhead vs hand-written code.
 The present work instantiates the prior categorical structure in Haskell, 
 contributing: statically typed tensor
 shapes via DataKinds; device and dtype polymorphism; batching as a
-type-level parameter; convolutional and pooling architectures; and
+type-level parameter; autoencoders and attention mechanisms; 
+type-level variable network depth and
 zero-overhead evidence via GHC Core.  These contributions are discussed
 in detail in Chapter~\ref{chap:casestudies}.
 

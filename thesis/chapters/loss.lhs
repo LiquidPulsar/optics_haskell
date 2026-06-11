@@ -96,18 +96,14 @@ $p \leftarrow p + \partial p$; the cap supplies the sign and magnitude.
 \section{The Gradient Scaling Convention}
 \label{sec:lossscaling}
 
-In a cartesian reverse differential category (CRDC)~\cite{catlearning},
-every object |A| is equipped with a natural addition $A \times A \to A$
-arising from its abelian group structure.  The training loop performs
-precisely this addition:
+As established in Section~\ref{sec:crdc-bg}, the training loop
+performs the CRDC natural addition
 \[
   \theta_{\text{new}} \;=\; \theta_{\text{old}} + \partial\theta,
 \]
-where $\partial\theta$ is whatever the backward pass emits.  This is
-not a convention imposed by the implementation; it is the structural
-update rule of the CRDC.
-
-The backward pass of the MSE loss (Section~\ref{sec:mse}) produces
+where $\partial\theta$ is emitted by the backward pass; its sign and
+magnitude are the sole determinants of whether the step is descent or
+ascent.  The backward pass of the MSE loss (Section~\ref{sec:mse}) produces
 \[
   \partial p \;=\; \tfrac{2}{N}\,\alpha \cdot (p - t),
 \]
@@ -125,8 +121,9 @@ $\tfrac{2}{N}$ factor arises from differentiating $\tfrac{1}{N}\sum_i
 (unnormalised) loss, breaking equivalence with standard automatic
 differentiation frameworks.  The negative sign is not a convention
 trick; it is the mechanism by which the additive CRDC structure produces
-descent rather than ascent.  Choosing $\alpha > 0$ gives ascent---useful
-in the deep-dream setting of Section~\ref{sec:deepdream}.
+descent rather than ascent.  Choosing $\alpha > 0$ gives ascent; the library includes |deepDreamLoss|---a
+dot-product loss $\langle t, p\rangle$ with symmetric gradients---to support
+activation-maximisation settings without any change to the training loop.
 
 \section{Mean-Squared Error: \texttt{lossSmooth}}
 \label{sec:mse}
@@ -161,27 +158,18 @@ lossSmooth = lens fwd (flip rev')
   where
     fwd              = uncurry $ T.mseLoss @T.ReduceMean
     rev' alpha       = (id &&& T.neg) . T.mul alpha . uncurry T.sub
+                       -- fans out gradient to both outputs: (d, -d)
 \end{code}
 
 \noindent The forward pass delegates to |T.mseLoss @T.ReduceMean|, which
-computes $\tfrac{1}{n}\sum_i(t_i - p_i)^2$ averaged over all elements;
-the |@T.ReduceMean| type application selects mean reduction over the result
-tensor, as opposed to |T.ReduceSum| (sum) or |T.ReduceNone| (per-element).
-The backward pass applies the chain rule to the mean-squared formula.
-Writing $N$ for the total number of elements in the output tensor, the
-derivative of $\tfrac{1}{N}\sum_i(t_i - p_i)^2$ with respect to each
-$p_i$ is $-\tfrac{2}{N}(t_i - p_i)$, giving gradient $\tfrac{2}{N}(p-t)$
-in vector form.  With the incoming scalar $\alpha$ from the learning-rate
-cap, the backward is:
+computes $\tfrac{1}{n}\sum_i(t_i - p_i)^2$ averaged over all elements.
+The backward pass applies the chain rule: with $N$ elements and incoming
+scalar $\alpha$ from the learning-rate cap,
 \[
   \partial t = \tfrac{2}{N}\,\alpha\,(t - p),
   \qquad
   \partial p = -\tfrac{2}{N}\,\alpha\,(t - p).
 \]
-In code, |T.mulScalar (2/n)| supplies the $\tfrac{2}{N}$ factor (where
-|n| is the runtime element count obtained via |numel|), |T.mul alpha|
-scales by the incoming gradient seed, and |(d, T.neg d)| fans out the
-symmetric gradients.
 
 \section{Softmax Cross-Entropy: \texttt{softMaxCELoss}}
 \label{sec:celoss}
@@ -228,25 +216,3 @@ targets, $-d\log q$, is available because the lens type treats both
 arguments symmetrically; in practice the training loop discards it, but
 it is useful in meta-learning settings where the targets themselves are
 learnable.
-
-\section{Dot-Product Loss: \texttt{deepDreamLoss}}
-\label{sec:deepdream}
-
-As a demonstration that the sign convention of
-Section~\ref{sec:lossscaling} is the only control knob needed for
-gradient ascent, the library includes a dot-product loss
-$\langle t, p \rangle = \sum_i t_i p_i$ whose backward pass is
-symmetric in both arguments:
-
-\begin{code}
-deepDreamLoss = lens fwd rev
-  where
-    fwd (bt, bp)    = T.sumAll $ T.mul bt bp
-    rev (bt, bp) g  = (T.mul bp g, T.mul bt g)
-\end{code}
-
-\noindent Supplying a positive learning rate maximises the inner product
-of the prediction with the target direction---useful, for instance, in
-activation-maximisation (``deep dream'') settings.  No change to the
-training loop is required; the sign of the gradient seed is the only
-difference from ordinary descent.

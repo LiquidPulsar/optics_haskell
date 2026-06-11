@@ -307,8 +307,6 @@ testIrisFwdEquiv = do
 -------------------------
 -- testIrisTrainStepEquiv
 -- One gradient step from identical init → same updated params?
--- Expected: FAIL — lossSmooth.rev' omits the 2/N MSE normalisation
--- factor (N = 8*3 = 24), so typed updates are 12x larger than PyTorch.
 -------------------------
 
 testIrisTrainStepEquiv :: IO [Bool]

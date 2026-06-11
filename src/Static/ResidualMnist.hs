@@ -80,7 +80,7 @@ resMnistModel ::
 resMnistModel = argToPara
   .#. rightLens (flatten @b @'[1, 28, 28]) . matMulLens . relu
   .#. stackN @NumBlocks (resBlock @b)
-  .#. matMulLens . sigmoid
+  .#. matMulLens
 
 resMnistModelLoss ::
   forall b dev dt.

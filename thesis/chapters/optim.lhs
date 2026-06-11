@@ -61,43 +61,9 @@ withGradDesc = repara gradUpdate
 
 \noindent |withGradDesc| ensures each backward pass computes
 $\theta \leftarrow \theta + \partial\theta$; |lrSmoothT lr|
-(Section~\ref{sec:lrcap}) provides the negative seed $\partial\theta
+(Section~\ref{sec:losscaps}) provides the negative seed $\partial\theta
 = -\eta \cdot \partial L / \partial\theta$ that makes the step descent.
 Neither component knows about the other.
-
-\section{Learning Rates as Caps}
-\label{sec:lrcap}
-
-The learning-rate family is formalised by a type synonym for lenses whose
-output type is the unit:
-
-\begin{code}
-type LRLens l l' = Lens l l' () ()
-\end{code}
-
-\noindent A value of type |LRLens l l'| closes the output wire to the
-monoidal unit $I = \mathtt{()}$ in both directions---exactly the cap
-identified in Chapter~\ref{chap:loss}.  The general constructor is:
-
-\begin{code}
-learningRate :: (l -> l') -> LRLens l l'
-learningRate alpha = lens (const ()) (const . alpha)
-\end{code}
-
-\noindent The getter |const ()| discards the scalar loss in the forward
-direction.  The setter |const . alpha| ignores the upstream |()| and
-applies |alpha| to the current learning-rate state |l|, emitting |alpha
-l| as the gradient seed.  For a constant negative tensor learning rate:
-
-\begin{code}
-lrSmoothT lr = learningRate (const (negate (scalarT lr)))
-\end{code}
-
-\noindent where |scalarT| lifts a Haskell scalar to a rank-0 tensor
-|Tensor dv dt []|.  Composing |lrSmoothT lr| on the right of
-|net .#. loss| via plain |(.)| closes the last wire to unit and
-seeds backpropagation with $-\eta$, as shown in
-Section~\ref{sec:losscaps}.
 
 \section{Momentum}
 \label{sec:momentum}
@@ -197,15 +163,24 @@ size.  The update $m' / \sqrt{v' + \delta}$ normalises the gradient by
 its recent root-mean-square, reducing the effective learning rate for
 high-variance parameters.
 
+\paragraph{Bias correction.}
+This implementation omits the bias-correction factors from the
+original Adam paper~\citep{kingma2017adammethodstochasticoptimization},
+using the raw moments $m'$ and $v'$ directly.  The effect is negligible
+once training is established; including correction would require
+threading a step counter through the optimiser state, adding a type
+parameter beyond what the thesis examples require---and beyond the
+original Cruttwell et al.\ framework \citep{catlearning}.
+
 The deepened state type |((m, v), p)| vs |Momentum|'s |(v, p)| is
-automatic: |repara (adam 0.9 0.999 1e-3) layer| expands the parameter
-type to |((m, v), weights)| with no changes to the layer or the rest of
-the network.
+automatic: applying\linebreak|repara (adam 0.9 0.999 1e-3)| expands the
+parameter type to |((m, v), weights)| with no changes to the layer
+or the rest of the network.
 
 \section{Per-layer Optimisers}
 \label{sec:perlayer}
 
-The central payoff of the |repara| mechanism is that different layers
+One key payoff of the |repara| mechanism is that different layers
 can use \emph{different optimisers} with no coordination between them:
 
 \begin{code}

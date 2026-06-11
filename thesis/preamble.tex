@@ -35,7 +35,7 @@
 % --- Page layout ---
 \usepackage[a4paper, margin=2.5cm]{geometry}
 \usepackage{setspace}
-\onehalfspacing
+\setstretch{1.3}
 
 % --- Graphics ---
 \usepackage{graphicx}
@@ -52,6 +52,15 @@
   wire/.style={->, >=Stealth, thick},
   inwire/.style={->, >=Stealth, semithick, gray!70!black}
 }
+
+% --- Chapter/section title spacing ---
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}{\chaptertitlename~\thechapter}{16pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{24pt}
+\titlespacing*{\section}{0pt}{1.5ex plus .5ex minus .3ex}{0.8ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus .4ex minus .2ex}{0.5ex plus .1ex}
+\titlespacing*{\subsubsection}{0pt}{1.0ex plus .3ex minus .2ex}{0.3ex plus .1ex}
 
 % --- References & links (load last) ---
 \usepackage[hidelinks]{hyperref}

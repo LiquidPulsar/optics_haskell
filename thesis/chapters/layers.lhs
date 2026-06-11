@@ -89,12 +89,25 @@ no manual construction.  The full backward pass---computing both $\partial
 L/\partial W$, $\partial L/\partial b$, and $\partial L/\partial x$---is wired
 together from the two constituent lenses without any additional code.
 
-For architectures that require a linear map over arbitrary leading dimensions,
-|linear'| relaxes the fixed |[batch, i]| constraint to any shape satisfying
-|IsSuffixOf [i] shape|.  The typed tensor API does not expose this general
-matmul rule, so the implementation wraps |U.matmul| with |UnsafeMkTensor|;
-the constraint |KnownNat i| supplies the static evidence needed to reconstruct
-the correct output shape at runtime.
+Throughout the case studies a convenience alias |matMulLens| is used,
+which pre-applies gradient descent to both the weight matrix and bias
+via |repara|:
+
+\begin{code}
+matMulLens  ::  (CanMMLens dv dt, T.KnownDevice dv)
+            =>  ParaLens'
+                  (MMP dv dt o i)
+                  (Tensor dv dt [batch, i])
+                  (Tensor dv dt [batch, o])
+matMulLens = repara (alongside gradUpdate gradUpdate) matMulLensCore
+\end{code}
+
+\noindent Here |MMP dv dt o i = (Tensor dv dt [o,i], Tensor dv dt [o])| is
+the weight-bias pair type.  Using |matMulLens| in a model definition is
+equivalent to composing |matMulLensCore| with |withGradDesc| after the
+fact; the difference is purely notational convenience.  Chapter~\ref{chap:optim}
+uses |matMulLensCore| explicitly to show how any optimiser can be
+substituted via |repara|.
 
 \section{Activation Functions}
 
@@ -198,7 +211,7 @@ The function |im2col| unfolds each spatial patch of the input into a column, pro
 multiply, summed over the batch dimension:
 \[
   \tfrac{\partial L}{\partial W}
-  \;=\; \sum_{\mathit{batch}} \mathit{grad\_flat} \cdot \mathit{x\_col}^\top
+  \;=\; \sum_{\mathit{batch}} \mathit{grad_flat} \cdot \mathit{x_col}^\top
   \;\;\in\; \mathbb{R}^{\mathit{outC} \times \mathit{inC} \cdot k_H \cdot k_W}
 \]
 which is reshaped to |[outC, inC, kH, kW]|.  This makes the gradient derivation
@@ -248,7 +261,7 @@ Gradients flow back through two paths simultaneously---one through $f$, one
 through the identity---and are summed at the input:
 \[
   \tfrac{\partial L}{\partial x}
-  = \underbrace{\tfrac{\partial L}{\partial f(x)} \cdot f'(x)}_{\text{through }f}
+  = \underbrace{\tfrac{\partial L}{\partial y} \cdot f'(x)}_{\text{through }f}
   \;+\;
   \underbrace{\tfrac{\partial L}{\partial y}}_{\text{skip}}
 \]
@@ -259,7 +272,8 @@ The implementation assembles this from two existing isomorphisms.
 |splitIso :: Iso a a (a, a) (a, a)| duplicates its argument in the
 forward direction and sums the two results in the backward direction;
 |from splitIso| is the reverse: it adds in the forward direction and
-duplicates in the backward.  Together with |rightLens|, |rotate|, and
+duplicates in the backward.  (|from :: AnIso s t a b -> Iso b a t s|
+inverts an isomorphism, swapping its two directions~\cite{ekmett2025lens}.)  Together with |rightLens|, |rotate|, and
 |alongside|, four combinators suffice:
 
 \begin{code}
@@ -274,12 +288,23 @@ data wire $a$ to $(a, a)$ while leaving the parameter wire $p$ intact;
 the other to |id|; the focus of |alongside f id| is the pair $(f(x),\, x)$;
 |from splitIso| sums the pair to produce $f(x) + x$ in the forward direction.
 
-The backward pass requires no extra work beyond the combinator structure.
-|from splitIso|{}'s setter distributes $\partial L/\partial y$ to both branches;
-|alongside| routes the first copy through |f|{}'s setter to obtain
-$(\partial L/\partial p,\;\partial L/\partial x\vert_f)$ and passes the second
-copy through |id| unchanged; |rightLens splitIso|{}'s setter sums the two
-input gradients, recovering the residual formula.
+The backward pass is the exact mirror of the forward pass, and no
+additional gradient logic is needed.
+|from splitIso|{}'s \emph{setter} distributes $\partial L/\partial y$ to
+both branches---precisely because its \emph{getter} summed them in the
+forward direction.  Symmetrically, |rightLens splitIso|{}'s \emph{setter}
+sums the two arriving input gradients into $\partial L/\partial x$---because
+its \emph{getter} fanned $x$ to two copies going forward.
+
+This duality is not coincidental: every Van Laarhoven lens encodes its
+forward computation in the getter and its inverse (in the CRDC sense) in
+the setter.  Placing |splitIso| at one end of the chain and |from
+splitIso| at the other is precisely what flips their roles under the two
+specialisations of the functor $f$---getter for the forward pass,
+setter for the backward pass.  The residual gradient formula
+$\partial L/\partial x = \partial L/\partial x\vert_f + \partial L/\partial y$
+emerges for free from the lens structure; it is not written anywhere in
+the implementation.
 
 A two-layer residual block is a single application of |skipPara|:
 
@@ -291,21 +316,57 @@ resBlock = skipPara (matMulLens . relu .#. matMulLens . relu)
 holds the two weight-bias pairs, inherited without modification from the
 inner pipeline.
 
-The |stackN @n| combinator nests |n| copies of a |ParaLens'| with |(.#.)|
-at the type level, deriving the product parameter type |StackedN n p|
-automatically.  Sandwiching a stack of residual blocks between an input
-projection and an output classifier gives:
+% The |stackN @n| combinator nests |n| copies of a |ParaLens'| with |(.#.)|
+% at the type level, deriving the product parameter type |StackedN n p|
+% automatically.  Sandwiching a stack of residual blocks between an input
+% projection and an output classifier gives:
+
+% \begin{code}
+% resMnistModel = argToPara
+%   .#. rightLens (flatten @b @[1, 28, 28]) . matMulLens . relu
+%   .#. stackN @NumBlocks resBlock
+%   .#. matMulLens . sigmoid
+% \end{code}
+
+% \noindent The full parameter type---input projection, product of block
+% parameters, output projection---is inferred entirely from the composition,
+% with no manual tuple construction.
+
+\subsection*{Projection Skips}
+\label{sec:projskip}
+
+|skipPara| requires its sub-network to be \emph{type-preserving}:
+|f :: ParaLens' p a a|.  Real ResNet stages that change spatial
+resolution or channel count cannot satisfy this; the original paper
+handles such transitions with a \emph{projection shortcut}
+$y = f(x) + P(x)$, where $P$ matches the output dimension.  The
+natural generalisation runs |f| and a learned projection |proj| in
+parallel over a shared input and sums:
 
 \begin{code}
-resMnistModel = argToPara
-  .#. rightLens (flatten @b @[1, 28, 28]) . matMulLens . relu
-  .#. stackN @NumBlocks resBlock
-  .#. matMulLens . sigmoid
+projSkipPara  ::  (Num b, Num b')
+              =>  ParaLens p p' a a' b b'
+              ->  ParaLens q q' a a' b b'
+              ->  ParaLens (p, q) (p', q') a a' b b'
+projSkipPara f proj
+    =  rightLens splitIso . r . alongside f proj . from splitIso
 \end{code}
 
-\noindent The full parameter type---input projection, product of block
-parameters, output projection---is inferred entirely from the composition,
-with no manual tuple construction.
+\noindent The structure mirrors |skipPara|: |from splitIso| fans the
+input $a$ to two copies; |alongside f proj| runs both branches in
+parallel, each with its own independent parameter wire; |rightLens
+splitIso| sums the two outputs.  The auxiliary |r| is a bookkeeping
+isomorphism that rearranges the nested parameter--data pairs so that
+|alongside| receives the correct shape; it carries no gradient logic
+and is compiled away entirely.
+
+The same |splitIso|/|from splitIso| duality applies: the gradient
+formula $\partial L/\partial x
+= \partial L/\partial x\vert_f + \partial L/\partial x\vert_P$
+falls out automatically, for the same reason as in |skipPara|.
+Passing |toPara id| for |proj| recovers the identity-shortcut
+case---the skip path contributes no learnable parameters and the
+combined type simplifies accordingly.
 
 \section{Attention}
 
@@ -335,19 +396,19 @@ selfAttention  ::  ( T.All KnownNat [b, s, e]
                    , T.BasicArithmeticDTypeIsValid dev dt
                    , T.StandardFloatingPointDTypeValidation dev dt
                    , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
-                   , KnownNat (b * s)
-                   , (b * (s * e)) ~ ((b * s) * e) )
+                   , KnownNat (b * s) -- Implied
+                   , (b * (s * e)) ~ ((b * s) * e) ) -- Implied
                =>  ParaLens'
                      (SelfAttnP dev dt e)
                      (Tensor dev dt [b, s, e])
                      (Tensor dev dt [b, s, e])
 \end{code}
 
-\noindent The equality |(b * (s * e)) ~ ((b * s) * e)| cannot be discharged
-automatically by GHC's type-level arithmetic---the solver does not apply
-associativity of multiplication without an explicit witness.  It must be
-named in the constraint to justify the |reshape| to $[b{\cdot}s,\; e]$
-inside the weight-gradient helper.
+% \noindent The equality |(b * (s * e)) ~ ((b * s) * e)| cannot be discharged
+% automatically by GHC's type-level arithmetic---the solver does not apply
+% associativity of multiplication without an explicit witness.  It must be
+% named in the constraint to justify the |reshape| to $[b{\cdot}s,\; e]$
+% inside the weight-gradient helper.
 
 \paragraph{Forward pass.}
 Given input $X \in \mathbb{R}^{b \times s \times e}$, scaled dot-product
