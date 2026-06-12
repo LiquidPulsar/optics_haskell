@@ -88,8 +88,12 @@ an open question.
 \paragraph{Investigation of reverse pass deduplication}
 It is conceivable that with sufficient massaging of inlining pass order,
 GHC can spot duplicated calls to forward passes (see Section~\ref{recomp}) in
-lens setters. This is a promising avenue that should fix a key limitation
-of the existing framework.
+lens setters. A Core-level experiment makes this concrete: specialising a
+composed attention setter and inspecting the optimised worker shows the
+scaled $QK^\top$ score and its softmax evaluated twice, once for the output
+the downstream layer consumes and once inside attention's reverse pass.
+Eliminating this measured recomputation is a promising avenue that should
+fix a key limitation of the existing framework.
 
 \paragraph{Discrete and probabilistic CRDCs.}
 The Cruttwell et al.\ framework is defined for any CRDC, not just

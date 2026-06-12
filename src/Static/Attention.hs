@@ -110,6 +110,7 @@ selfAttention = lens fwd rev
       where
         dot = T.reshape @[b, s, 1] $ T.sumDim @2 (w * dw)
     {-# INLINE softmaxBwd #-}
+{-# INLINE selfAttention #-}
 
 multiHeadSelfAttention ::
   forall b s e h hd dev dt t.
@@ -197,3 +198,50 @@ multiHeadSelfAttention = lens fwd rev
         dWk = wGrad x dK3D
         dWv = wGrad x dV3D
         dX  = T.matmul dQ3D wq + T.matmul dK3D wk + T.matmul dV3D wv
+
+-- ---------------------------------------------------------------------------
+-- Core-inspection probe: is the recomputed runFwd shared (CSE) or duplicated?
+--
+-- selfAttention's setter recomputes runFwd to recover the intermediates it
+-- needs (Limitations, Section 8.3 of the thesis). On its own this is a single
+-- runFwd: when a lens is specialised to its setter (f = Identity, via `set`),
+-- the getter result `fwd s` is dropped by `const`, so only `rev`'s recomputed
+-- runFwd survives.
+--
+-- The duplication appears under composition. When attention is followed by a
+-- layer whose backward pass depends on attention's forward output, that output
+-- must be computed to drive the downstream pass, while attention's own `rev`
+-- recomputes runFwd independently. The composed setter then holds two
+-- structurally identical runFwd computations: one feeding the dummy forward,
+-- one inside attention's rev.
+--
+-- Compile with -O2 -ddump-simpl and count the runFwd blocks (e.g. occurrences
+-- of the q/k/v projection matmuls): two copies means GHC did not eliminate the
+-- duplicate; a single copy means common-subexpression elimination merged them.
+-- ---------------------------------------------------------------------------
+
+type AttnDev = '(T.CPU, 0)
+type AttnDT  = T.Float
+type AttnIn  = Tensor AttnDev AttnDT [2, 3, 4] -- [b, s, e]
+type AttnP   = SelfAttnP AttnDev AttnDT 4
+
+-- A downstream "dummy" whose backward pass uses its forward input, so that
+-- attention's forward output stays live next to the recomputed runFwd.
+-- getter = id (pass the activation through); setter = elementwise (input * grad).
+attnDummy :: Lens' AttnIn AttnIn
+attnDummy = lens id (\x dy -> x * dy)
+{-# INLINE attnDummy #-}
+
+-- attention followed by the dummy, at fully concrete shapes.
+attnComposed :: ParaLens' AttnP AttnIn AttnIn
+attnComposed = selfAttention . attnDummy
+{-# INLINE attnComposed #-}
+
+-- Forward (getter) specialisation: a single runFwd. Baseline for comparison.
+attnFwd :: (AttnP, AttnIn) -> AttnIn
+attnFwd = view attnComposed
+
+-- Setter specialisation: the forward output feeds the dummy and attention's
+-- rev recomputes runFwd. This is the binding to inspect for CSE of runFwd.
+attnSetter :: (AttnP, AttnIn) -> AttnIn -> (AttnP, AttnIn)
+attnSetter s dOut = set attnComposed dOut s
