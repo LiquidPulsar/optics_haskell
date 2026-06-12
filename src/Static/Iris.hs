@@ -114,6 +114,9 @@ irisModel = argToPara .#. nMuls @n .#. matMulLens . sigmoid
 test :: forall dv dt b. (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt [b, 4]), IParams 1 dv dt) -> Out (T.Tensor dv dt [b, 3])
 test = runFullModel $ irisModel @1
 
+test' :: forall dv dt b. (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt [b, 4]), IParams 50 dv dt) -> Out (T.Tensor dv dt [b, 3])
+test' = runFullModel $ irisModel @50 -- 1800 lines of Core, but V.H. fully inlines!
+
 handRolledTest :: (SaneDT dv dt, T.KnownDevice dv) => (Inp (T.Tensor dv dt [b, 4]), IParams 1 dv dt) -> Out (T.Tensor dv dt [b, 3])
 handRolledTest (i, (mb, mb')) = layer mb' . layer mb $ i
   where

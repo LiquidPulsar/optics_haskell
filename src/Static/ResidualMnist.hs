@@ -27,14 +27,11 @@ import Static.Loss
 import Static.Optim
 import Static.Mnist ( loadMnist, mnistTargets
                     , BatchSize, NumTrain, NumTest, SaneMnist )
--- import System.Mem (performMajorGC)
+import System.Mem (performMajorGC)
 
--- ─── Hyperparameters ──────────────────────────────────────────────────────────
 
 type Hidden    = 128
 type NumBlocks = 3
-
--- ─── Parameter types ──────────────────────────────────────────────────────────
 
 -- One residual block: two square dense layers
 type ResBlockP dev dt = (MMP dev dt Hidden Hidden, MMP dev dt Hidden Hidden)
@@ -45,10 +42,7 @@ type ResMnistP dev dt =
   , ( StackedN NumBlocks (ResBlockP dev dt)
     , MMP dev dt 10 Hidden ) )
 
--- ─── Constraint bundle ────────────────────────────────────────────────────────
 
--- Bundles the extra constraints that skipPara + relu + flatten need
--- on top of SaneMnist, for the concrete [b, Hidden] shape.
 type SaneRes b dev dt =
   ( SaneMnist dev dt
   , KnownNat b
@@ -59,16 +53,13 @@ type SaneRes b dev dt =
   , CanStack NumBlocks
   )
 
--- ─── Residual block ───────────────────────────────────────────────────────────
 
 -- y = relu(W2(relu(W1 x))) + x
 resBlock ::
   forall b dev dt.
   SaneRes b dev dt =>
   ParaLens' (ResBlockP dev dt) (Tensor dev dt [b, Hidden]) (Tensor dev dt [b, Hidden])
-resBlock = skipPara (matMulLens . relu .#. matMulLens . relu)
-
--- ─── Model ────────────────────────────────────────────────────────────────────
+resBlock = skipPara (matMulLens . relu .#. matMulLens)
 
 resMnistModel ::
   forall b dev dt.
@@ -124,12 +115,13 @@ resMnistInitParams = do
   wIn <- sc (sqrt (2/784)) <$> T.randn ; let bIn = T.zeros
   -- Residual blocks: fan_in = Hidden = 128
   -- StackedN 3 p = (p, (p, p))
-  w1a <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b1a = T.zeros
-  w1b <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b1b = T.zeros
-  w2a <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b2a = T.zeros
-  w2b <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b2b = T.zeros
-  w3a <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b3a = T.zeros
-  w3b <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let b3b = T.zeros
+  let sch = sc (sqrt (2/natValF @Hidden)) <$> T.randn
+  w1a <- sch; let b1a = T.zeros
+  w1b <- sch; let b1b = T.zeros
+  w2a <- sch; let b2a = T.zeros
+  w2b <- sch; let b2b = T.zeros
+  w3a <- sch; let b3a = T.zeros
+  w3b <- sch; let b3b = T.zeros
   -- Output layer: fan_in = Hidden = 128
   wOut <- sc (sqrt (2/natValF @Hidden)) <$> T.randn ; let bOut = T.zeros
   pure ( (wIn, bIn)
@@ -170,7 +162,6 @@ resMnistAccuracy p targets = fromIntegral correct / fromIntegral total
     correct = length (filter id results)
     total   = length results
 
--- ─── Training ─────────────────────────────────────────────────────────────────
 
 resMnistEpoch ::
   forall dev dt.
@@ -203,7 +194,7 @@ resMnistTrain = do
 
   let epochs = iterate (resMnistEpoch trainT) p0
   forM_ (zip [0 ..] epochs) $ \(e, p) -> do
-    -- performMajorGC
+    performMajorGC
     let acc = resMnistAccuracy p testT
     t1 <- getCurrentTime
     putStrLn $ unwords

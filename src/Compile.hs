@@ -1,11 +1,19 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Compile where
-
+import Static.Layers (matMulLens, CanMMLens)
+import qualified Static.Layers as L
+import Core
+import qualified Torch.Typed as T
 import Control.Lens
-import Core (leftLens)
+import Models (runModel)
+
+-- import Control.Lens
+-- import Core (leftLens)
 -- import qualified Torch.Typed as T
 -- import qualified Torch as U
 -- import qualified Torch.Functional.Internal as I
@@ -63,3 +71,23 @@ import Core (leftLens)
 -- {-# RULES
 -- "i @ m.T + b -> linear" forall m i b. T.add (T.matmul i (T.transpose @0 @1 m)) b = T.linear m i b
 -- #-}
+
+
+
+
+
+-- type DV = '(T.CPU, 0)
+-- type DT = T.Double
+
+-- p = undefined
+-- oops = undefined
+
+-- type Tensor s = T.Tensor DV DT s
+-- type MMP o i = L.MMP DV DT o i
+
+-- foo :: ParaLens' (MMP 6 4) (Tensor [b, 4]) (Tensor [b, 6])
+-- foo = matMulLens
+
+-- x :: Tensor [1, 6]
+-- x = run (p :: MMP 6 4, oops :: Tensor [1, 10])
+--   where run = runModel foo

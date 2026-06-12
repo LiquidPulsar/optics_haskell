@@ -25,9 +25,15 @@ multi-head generalisation are implemented as \texttt{ParaLens'} values with
 fully hand-derived backward passes, including the rank-one Jacobian
 correction for the softmax non-linearity, with the head-count and
 embedding-dimension compatibility constraint enforced at the type level.
-Variable-depth residual networks are constructed by typeclass induction
+Variable-depth networks are constructed at the type level by typeclass induction
 over type-level Peano naturals.  Zero overhead is verified by GHC Core
 inspection: the entire lens abstraction---composition,
 reparametrisation, the van Laarhoven \texttt{forall}---is absent from the
-optimised output.
+optimised output.  Every hand-derived backward pass is cross-validated
+against PyTorch autograd to a tolerance of $10^{-4}$, so the gradients are
+written by hand but checked by machine.  On small-scale CPU benchmarks,
+where tape-construction and dispatch overhead dominate over kernel
+compute, the framework is $5.3\times$ faster than dynamic autograd: the
+tape is eliminated entirely, and the hand-derived backward pass reduces to
+the same primitive tensor calls as the forward pass.
 \end{abstract}

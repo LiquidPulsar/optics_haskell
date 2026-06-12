@@ -195,8 +195,10 @@ softMaxCELoss = lens fwd rev
   where
     fwd (bt, bp)  = negate . T.meanAll . T.sumDim @1
                     $ bt * T.logSoftmax @1 bp
-    rev (bt, bp) d  = (T.mul d $ negate $ T.log q, T.mul d $ q - bt)
-      where q       = T.softmax @1 bp
+    rev (bt, bp) d  = (T.mul d' $ negate $ T.log q, T.mul d' $ q - bt)
+      where
+        q   = T.softmax @1 bp
+        d'  = T.mulScalar (recip (fromIntegral (T.natValI @x)) :: Float) d
 \end{code}
 
 \noindent The forward pass computes
@@ -210,9 +212,17 @@ dimension) so that softmax and the summation operate over classes
 while leaving axis~0 (the batch) intact.
 
 The backward pass exploits the well-known simplification that arises
-when softmax and cross-entropy are fused: the gradient with respect to
-the logits is simply $d\,(q - t)$.  The gradient with respect to the
-targets, $-d\log q$, is available because the lens type treats both
-arguments symmetrically; in practice the training loop discards it, but
-it is useful in meta-learning settings where the targets themselves are
-learnable.
+when softmax and cross-entropy are fused.  Differentiating the mean
+over $x$ examples gives a $\tfrac{1}{x}$ factor that must be carried
+through: the gradient with respect to the logits is
+\[
+  \frac{d}{x}\,(q - t),
+\]
+where $d$ is the upstream scalar and $x$ is the batch size known at
+compile time via the type-level natural |T.natValI @x|.  Without this
+factor the effective learning rate would scale with the batch size,
+breaking equivalence with standard automatic-differentiation frameworks.
+The gradient with respect to the targets, $-\tfrac{d}{x}\log q$, is
+available because the lens type treats both arguments symmetrically; in
+practice the training loop discards it, but it is useful in
+meta-learning settings where the targets themselves are learnable.

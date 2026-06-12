@@ -34,6 +34,7 @@ instance StackN 'One where
 instance StackN n => StackN (Succ n) where
     stack :: StackN n => ParaLens' p a a -> ParaLens' (Stacked (Succ n) p) a a
     stack l = l .#. stack @n l
+    {-# INLINE stack #-}
 
 -- Conversion bridge
 type family ToPeano (n :: Nat) :: PeanoNat where

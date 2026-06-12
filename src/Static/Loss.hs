@@ -83,9 +83,10 @@ softMaxCELoss = lens fwd rev
     fwd (bt, bp) = negate . T.meanAll . T.sumDim @1 $ bt * T.logSoftmax @1 bp
 
     rev :: (t [x, c], t [x, c]) -> t '[] -> (t [x, c], t [x, c])
-    rev (bt, bp) d = (T.mul d $ negate $ T.log q, T.mul d $ q - bt)
+    rev (bt, bp) d = (T.mul d' $ negate $ T.log q, T.mul d' $ q - bt)
       where
-        q = T.softmax @1 bp   -- [x,c], sums to 1 over class dim
+        q  = T.softmax @1 bp
+        d' = T.mulScalar (recip (fromIntegral (T.natValI @x)) :: Float) d
 
 deepDreamLoss ::
   forall t shape dv dt.

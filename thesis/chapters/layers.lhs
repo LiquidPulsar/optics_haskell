@@ -38,11 +38,8 @@ The weight matrix alone constitutes a |ParaLens'| whose parameter is a
 typed tensor of shape |[o, i]|:
 
 \begin{code}
-linear  ::  T.MatMulDTypeIsValid dv dt
-        =>  ParaLens'
-              (Tensor dv dt [o, i])
-              (Tensor dv dt [batch, i])
-              (Tensor dv dt [batch, o])
+linear :: T.MatMulDTypeIsValid dv dt
+       => ParaLens' (Tensor dv dt [o, i]) (Tensor dv dt [batch, i]) (Tensor dv dt [batch, o])
 linear = lens fwd rev
   where
     fwd (w, x)      = T.matmul x (transp w)
@@ -58,15 +55,10 @@ Bias addition is a separate |ParaLens'| that broadcasts a vector across the batc
 dimension and collapses it back on the reverse pass:
 
 \begin{code}
-addLens  ::  CanAddLens dv dt
-         =>  ParaLens'
-               (Tensor dv dt shape)
-               (Tensor dv dt (b : shape))
-               (Tensor dv dt (b : shape))
-addLens = lens fwd rev
-  where
-    fwd = uncurry T.add
-    rev _ = T.sumDim @0 &&& id
+addLens :: CanAddLens dv dt
+        => ParaLens' (Tensor dv dt shape) (Tensor dv dt (b : shape)) (Tensor dv dt (b : shape))
+addLens = lens (uncurry T.add) rev
+  where rev _ = T.sumDim @0 &&& id
 \end{code}
 
 \noindent The gradient with respect to the bias is a sum over the batch axis
@@ -75,11 +67,8 @@ input is the identity.  Composing the two
 with |(.#.)| yields a full affine layer in a single line:
 
 \begin{code}
-matMulLensCore  ::  CanMMLens dv dt
-                =>  ParaLens'
-                      (Tensor dv dt [o, i], Tensor dv dt [o])
-                      (Tensor dv dt [batch, i])
-                      (Tensor dv dt [batch, o])
+matMulLensCore :: CanMMLens dv dt
+               =>  ParaLens' (Tensor dv dt [o, i], Tensor dv dt [o]) (Tensor dv dt [b, i]) (Tensor dv dt [b, o])
 matMulLensCore = linear .#. addLens
 \end{code}
 
@@ -94,11 +83,8 @@ which pre-applies gradient descent to both the weight matrix and bias
 via |repara|:
 
 \begin{code}
-matMulLens  ::  (CanMMLens dv dt, T.KnownDevice dv)
-            =>  ParaLens'
-                  (MMP dv dt o i)
-                  (Tensor dv dt [batch, i])
-                  (Tensor dv dt [batch, o])
+matMulLens :: (CanMMLens dv dt, T.KnownDevice dv)
+           =>  ParaLens' (MMP dv dt o i) (Tensor dv dt [b, i]) (Tensor dv dt [b, o])
 matMulLens = repara (alongside gradUpdate gradUpdate) matMulLensCore
 \end{code}
 
@@ -117,8 +103,7 @@ Activation functions carry no learnable parameters and are plain |Lens'| values:
 sigmoid  ::  T.StandardFloatingPointDTypeValidation dv dt
          =>  Lens' (Tensor dv dt shape) (Tensor dv dt shape)
 sigmoid = lens T.sigmoid rev
-  where
-    rev = (*) . ap (*) (1 -) . T.sigmoid
+  where rev = (*) . ap (*) (1 -) . T.sigmoid
 
 relu     ::  T.StandardFloatingPointDTypeValidation dv dt
          =>  Lens' (Tensor dv dt shape) (Tensor dv dt shape)
@@ -180,14 +165,11 @@ The two-dimensional convolution layer is a |ParaLens'| with the convolutional
 kernel as its parameter:
 
 \begin{code}
-convLens  ::  ( ConvSideCheck h kH 1 0 oH
-              , ConvSideCheck w kW 1 0 oW
-              , T.All KnownNat [inC, outC, h, w, batch, oH, oW]
-              , T.KnownDType dt, T.KnownDevice dv )
-          =>  ParaLens'
-                (Tensor dv dt [outC, inC, kH, kW])
-                (Tensor dv dt [batch, inC, h, w])
-                (Tensor dv dt [batch, outC, oH, oW])
+convLens :: ( ConvSideCheck h kH 1 0 oH , ConvSideCheck w kW 1 0 oW
+            , T.All KnownNat [inC, outC, h, w, b, oH, oW] , T.KnownDType dt, T.KnownDevice dv )
+        => ParaLens' (Tensor dv dt [outC, inC, kH, kW]) 
+           (Tensor dv dt [b, inC, h, w]) 
+           (Tensor dv dt [b, outC, oH, oW])
 \end{code}
 
 \noindent The constraints |ConvSideCheck h kH 1 0 oH| and
@@ -204,8 +186,9 @@ operator:
 \[
   \tfrac{\partial L}{\partial x} \;=\; \mathit{convTranspose2d}(\mathit{kernel},\; \mathit{grad})
 \]
-% The gradient with respect to the kernel uses the im2col decomposition rather than
-% the opaque |convolution_backward_overrideable| internal.  
+\noindent Both |convTranspose2d| and the |im2col| function used below
+required bug fixes to the hasktorch typed API before they could be used here;
+the details are in Appendix~\ref{app:bugfixes}.
 The function |im2col| unfolds each spatial patch of the input into a column, producing a tensor of shape
 |[batch, inC*kH*kW, oH*oW]|.  The kernel gradient is then a batched matrix
 multiply, summed over the batch dimension:
@@ -296,15 +279,14 @@ forward direction.  Symmetrically, |rightLens splitIso|{}'s \emph{setter}
 sums the two arriving input gradients into $\partial L/\partial x$, because
 its \emph{getter} fanned $x$ to two copies going forward.
 
-This duality is not coincidental: every Van Laarhoven lens encodes its
-forward computation in the getter and its inverse (in the CRDC sense) in
-the setter.  Placing |splitIso| at one end of the chain and |from
-splitIso| at the other is precisely what flips their roles under the two
-specialisations of the functor $f$: getter for the forward pass,
-setter for the backward pass.  The residual gradient formula
+The elegance is that |splitIso| and |from splitIso| are a single
+isomorphism and its inverse.  Forward, |splitIso| \emph{splits} the input
+into two copies and |from splitIso| \emph{joins} them by summation;
+backward, the roles swap.  This is automatic: a lens encodes its forward
+map in the getter and its CRDC inverse in the setter, so a split one way is
+a join the other.  The residual formula
 $\partial L/\partial x = \partial L/\partial x\vert_f + \partial L/\partial y$
-emerges for free from the lens structure; it is not written anywhere in
-the implementation.
+thus emerges for free, written nowhere in the implementation.
 
 A two-layer residual block is a single application of |skipPara|:
 
@@ -344,12 +326,9 @@ natural generalisation runs |f| and a learned projection |proj| in
 parallel over a shared input and sums:
 
 \begin{code}
-projSkipPara  ::  (Num b, Num b')
-              =>  ParaLens p p' a a' b b'
-              ->  ParaLens q q' a a' b b'
-              ->  ParaLens (p, q) (p', q') a a' b b'
-projSkipPara f proj
-    =  rightLens splitIso . r . alongside f proj . from splitIso
+projSkipPara :: (Num b, Num b')
+             =>  ParaLens p p' a a' b b' -> ParaLens q q' a a' b b' ->  ParaLens (p, q) (p', q') a a' b b'
+projSkipPara f proj = rightLens splitIso . r . alongside f proj . from splitIso
 \end{code}
 
 \noindent The structure mirrors |skipPara|: |from splitIso| fans the
@@ -370,13 +349,12 @@ combined type simplifies accordingly.
 
 \section{Attention}
 
-Self-attention is the most structurally complex layer in this chapter: the
-output at every position is a weighted average of all other positions, with
-weights that are themselves a differentiable function of the input.
-Despite this non-linearity the layer is \emph{stateful} (four square
-projection matrices are its learnable parameters), and it fits into the
-|ParaLens'| abstraction without modification.  The parameter type groups
-the four matrices in a tuple:
+Self-attention is the most structurally complex layer in this chapter:
+each output position is a weighted average of all positions, with weights
+that are themselves a differentiable function of the input. The layer is
+\emph{stateful}, its learnable parameters being four square projection
+matrices, and it fits the |ParaLens'| abstraction unchanged. The parameter
+type groups them in a tuple:
 
 \begin{code}
 type SelfAttnP dev dt e =
@@ -391,17 +369,14 @@ type SelfAttnP dev dt e =
 fixed at the type level, the signature of |selfAttention| is:
 
 \begin{code}
-selfAttention  ::  ( T.All KnownNat [b, s, e]
-                   , T.MatMulDTypeIsValid dev dt
-                   , T.BasicArithmeticDTypeIsValid dev dt
-                   , T.StandardFloatingPointDTypeValidation dev dt
-                   , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
-                   , KnownNat (b * s) -- Implied
-                   , (b * (s * e)) ~ ((b * s) * e) ) -- Implied
-               =>  ParaLens'
-                     (SelfAttnP dev dt e)
-                     (Tensor dev dt [b, s, e])
-                     (Tensor dev dt [b, s, e])
+selfAttention :: ( T.All KnownNat [b, s, e]
+                  , T.MatMulDTypeIsValid dev dt
+                  , T.BasicArithmeticDTypeIsValid dev dt
+                  , T.StandardFloatingPointDTypeValidation dev dt
+                  , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
+                  , KnownNat (b * s) -- Implied
+                  , (b * (s * e)) ~ ((b * s) * e) ) -- Implied
+              => ParaLens' (SelfAttnP dev dt e) (Tensor dev dt [b, s, e]) (Tensor dev dt [b, s, e])
 \end{code}
 
 % \noindent The equality |(b * (s * e)) ~ ((b * s) * e)| cannot be discharged
@@ -412,25 +387,18 @@ selfAttention  ::  ( T.All KnownNat [b, s, e]
 
 \paragraph{Forward pass.}
 Given input $X \in \mathbb{R}^{b \times s \times e}$, scaled dot-product
-attention proceeds in six steps.  The input is first projected into query,
-key, and value spaces:
+attention projects $X$ into query, key, and value spaces, scores them,
+normalises by softmax, and averages the values:
 \[
-  Q = X W_Q^\top, \qquad K = X W_K^\top, \qquad V = X W_V^\top
-  \qquad \in \mathbb{R}^{b \times s \times e}
-\]
-The attention scores are formed by a scaled inner product, normalised by
-softmax, and used to produce a weighted average of the values:
-\[
-  S = \tfrac{1}{\sqrt{e}}\; Q K^\top
-  \;\in \mathbb{R}^{b \times s \times s},
-  \qquad
-  A = \operatorname{softmax}(S),
-  \qquad
+  Q = X W_Q^\top, \quad K = X W_K^\top, \quad V = X W_V^\top, \qquad
+  S = \tfrac{1}{\sqrt{e}}\, Q K^\top, \quad
+  A = \operatorname{softmax}(S), \quad
   \mathit{out} = A V W_O^\top
 \]
-All six intermediate values are retained by an internal helper |runFwd|,
-which is shared between the getter and the setter so that the backward
-pass need not recompute the forward pass:
+All six intermediate values are produced by a helper |runFwd| used by both
+the getter and the setter. The getter returns the final projection; the
+setter calls |runFwd| a second time to reconstruct the intermediates,
+since the lens carries no channel for cached activations (Section~\ref{sec:limitations}):
 
 \begin{code}
     runFwd (wq, wk, wv, wo) x =
@@ -470,8 +438,7 @@ for all four projection matrices, playing the same role that
 
 \begin{code}
     wGrad x dY =
-      T.matmul  (T.transpose @0 @1 (T.reshape @[b * s, e] dY))
-                (T.reshape @[b * s, e] x)
+      T.matmul (T.transpose @0 @1 (T.reshape @[b * s, e] dY)) (T.reshape @[b * s, e] x)
 \end{code}
 
 \emph{Weighted sum.}
@@ -496,8 +463,7 @@ reshaped to $[b, s, 1]$ for broadcasting, and the result is scaled
 element-wise by $A$:
 
 \begin{code}
-    softmaxBwd w dw = w * T.sub dw dot
-      where dot = T.reshape @[b, s, 1] $ T.sumDim @2 (w * dw)
+    softmaxBwd w dw = w * T.sub dw $ T.reshape @[b, s, 1] $ T.sumDim @2 (w * dw)
 \end{code}
 
 \emph{Scaled dot-product.}
@@ -533,11 +499,8 @@ and |scale'| denoting multiplication by $1/\sqrt{e}$, is:
         dWeights = mm dAttn    (tr v)
         dV       = mm (tr weights) dAttn
         dScores  = softmaxBwd weights dWeights
-        dQ       = scale' $ mm dScores    k
-        dK       = scale' $ mm (tr dScores) q
-        dWq      = wGrad x dQ
-        dWk      = wGrad x dK
-        dWv      = wGrad x dV
+        (dQ, dK) = (scale' $ mm dScores    k, scale' $ mm (tr dScores) q)
+        (dWq, dWk, dWv) = (wGrad x dQ, wGrad x dK, wGrad x dV)
         dX       = T.matmul dQ wq + T.matmul dK wk + T.matmul dV wv
 \end{code}
 
@@ -556,11 +519,11 @@ computation:
 
 \noindent |splitHeads| maps $[b, s, e] \to [b, s, h, \mathit{hd}] \to
 [b, h, s, \mathit{hd}]$: the |reshape| partitions each embedding vector
-into $h$ contiguous slices of width $\mathit{hd}$, and the |transpose|
-brings the head axis adjacent to the batch axis so that subsequent batched
-matrix multiplies treat $b \times h$ as a single leading batch dimension.
-The constraint |Numel [b, s, e] ~ Numel [b, s, h, hd]| is the type-level
-proof that the reshape preserves the total number of elements.
+into $h$ slices of width $\mathit{hd}$, and the |transpose| brings the head
+axis next to the batch axis, so batched matrix multiplies treat $b \times
+h$ as one leading dimension. The constraint
+|Numel [b, s, e] ~ Numel [b, s, h, hd]| witnesses that the reshape
+preserves element count.
 
 Two details differ from the single-head case.  First, the scale factor is
 $1/\sqrt{\mathit{hd}}$ rather than $1/\sqrt{e}$: within each head the
@@ -570,14 +533,11 @@ with the full embedding $e$.  Second, softmax is applied along dimension~3
 dimension~2, and the softmax backward uses |sumDim @3| and a broadcast
 reshape to $[b, h, s, 1]$ accordingly.
 
-The backward pass is structurally identical to the single-head case.
-Gradients for $Q$, $K$, and $V$ are computed in the $[b, h, s, \mathit{hd}]$
-layout and collapsed to $[b, s, e]$ via |mergeHeads| before being passed
-to |wGrad|.  Because the projection matrices remain $[e, e]$ regardless
-of $h$, |wGrad| is shared unchanged between the two implementations.
+The backward pass is structurally identical. Gradients for $Q$, $K$, and
+$V$ are computed in the $[b, h, s, \mathit{hd}]$ layout and collapsed to
+$[b, s, e]$ via |mergeHeads| before |wGrad|; since the projection matrices
+stay $[e, e]$ regardless of $h$, |wGrad| is shared unchanged.
 
-Like every other layer in this chapter, both attention variants are
-|ParaLens'| values and compose into larger architectures via |(.#.)|.
-The 4-tuple parameter type is absorbed automatically into the product type
-of the enclosing model by the composition rule, with no boilerplate
-required.
+Both attention variants are |ParaLens'| values: their 4-tuple parameter
+type is absorbed into the enclosing model's product type by |(.#.)| with
+no extra wiring, exactly as for every other layer in this chapter.

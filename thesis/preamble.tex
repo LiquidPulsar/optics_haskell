@@ -12,6 +12,11 @@
 % Fires the ReadOnlyOnce blocks in the preamble so \usepackage calls inside
 % generated chapter files are suppressed when \include'd after \begin{document}.
 \input{generated/lhs2tex-preamble}
+\setlength{\mathindent}{1em}   % reduce code-block left indent (default: \leftmargini ≈ 2.5em)
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{5pt plus 2pt minus 2pt}%
+  \setlength{\belowdisplayskip}{3pt plus 2pt minus 2pt}%
+}
 
 % --- Encoding & fonts ---
 \usepackage[T1]{fontenc}

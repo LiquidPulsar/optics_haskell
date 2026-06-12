@@ -17,10 +17,10 @@ import Core
 import Control.Lens
 
 type SelfAttnP dev dt e =
-  ( Tensor dev dt [e, e]  -- Wq
-  , Tensor dev dt [e, e]  -- Wk
-  , Tensor dev dt [e, e]  -- Wv
-  , Tensor dev dt [e, e]  -- Wo
+  ( Tensor dev dt [e, e] -- Wq
+  , Tensor dev dt [e, e] -- Wk
+  , Tensor dev dt [e, e] -- Wv
+  , Tensor dev dt [e, e] -- Wo
   )
 
 selfAttention ::
@@ -56,8 +56,8 @@ selfAttention = lens fwd rev
           k       = proj wk x
           v       = proj wv x
           scores  = T.mulScalar scale $ T.matmul q $ tr k
-          weights = T.softmax @2 scores   -- [b, s, s]
-          attn    = T.matmul weights v    -- [b, s, e]
+          weights = T.softmax @2 scores -- [b, s, s]
+          attn    = T.matmul weights v -- [b, s, e]
       in (q, k, v, weights, attn, proj wo attn)
     {-# INLINE runFwd #-}
 
@@ -70,19 +70,19 @@ selfAttention = lens fwd rev
         (q, k, v, weights, attn, _) = runFwd p x
 
         -- dL/dattn and dL/dWo via output projection (out = attn @ Wo^T)
-        dAttn = T.matmul dOut wo                                            -- [b,s,e] @ [e,e]
+        dAttn = T.matmul dOut wo -- [b,s,e] @ [e,e]
         dWo   = wGrad attn dOut
 
         -- dL/dweights and dL/dv via weighted sum (attn = weights @ v)
-        dWeights = mm dAttn      (tr v)                              -- [b,s,s]
-        dV       = mm (tr weights) dAttn                             -- [b,s,e]
+        dWeights = mm dAttn      (tr v) -- [b,s,s]
+        dV       = mm (tr weights) dAttn -- [b,s,e]
 
         -- dL/dscores via softmax
         dScores  = softmaxBwd weights dWeights
 
         -- dL/dq and dL/dk via scaled matmul (scores = scale * q @ k^T)
-        dQ = scale' $ mm dScores      k                             -- [b,s,e]
-        dK = scale' $ mm (tr dScores) q                             -- [b,s,e]
+        dQ = scale' $ mm dScores      k -- [b,s,e]
+        dK = scale' $ mm (tr dScores) q -- [b,s,e]
 
         -- dL/dWq,Wk,Wv and dL/dx via input projections (q = x @ Wq^T)
         dWq = wGrad x dQ
@@ -90,11 +90,9 @@ selfAttention = lens fwd rev
         dWv = wGrad x dV
         dX  = T.matmul dQ wq + T.matmul dK wk + T.matmul dV wv
 
-    -- Batched matmul shorthand
     mm :: t [b, s1, n] -> t [b, n, s2] -> t [b, s1, s2]
     mm = T.matmul
 
-    -- Transpose last two dims
     tr :: t [b, x, y] -> t [b, y, x]
     tr = T.transpose @1 @2
 
@@ -124,13 +122,13 @@ multiHeadSelfAttention ::
   , T.KnownDType dt, T.KnownDevice dev
   , T.SumDType dt ~ dt, T.SumDTypeIsValid dev dt
   , KnownNat (b * s)
-  , (b * (s * e)) ~ ((b * s) * e)              -- wGrad reshape
+  , (b * (s * e)) ~ ((b * s) * e) -- wGrad reshape
   , T.Numel [b, s, e] ~ T.Numel [b, s, h, hd] -- splitHeads reshape
   ) =>
   ParaLens' (SelfAttnP dev dt e) (t [b, s, e]) (t [b, s, e])
 multiHeadSelfAttention = lens fwd rev
   where
-    scale  = 1.0 / sqrt (fromIntegral (natValI @hd)) :: Double  -- hd not e
+    scale  = 1.0 / sqrt (fromIntegral (natValI @hd)) :: Double -- hd not e
     scaleF = realToFrac scale :: Float
 
     proj w x = T.matmul x (T.transpose @0 @1 w)
@@ -151,19 +149,19 @@ multiHeadSelfAttention = lens fwd rev
 
     softmaxBwdH :: t [b, h, s, s] -> t [b, h, s, s] -> t [b, h, s, s]
     softmaxBwdH w dw = w * T.sub dw dot
-      where dot = T.reshape @'[b, h, s, 1] $ T.sumDim @3 (w * dw)  -- dim 3, not 2
+      where dot = T.reshape @'[b, h, s, 1] $ T.sumDim @3 (w * dw) -- dim 3, not 2
 
     wGrad :: t [b, s, e] -> t [b, s, e] -> t [e, e]
     wGrad x dY = T.matmul (T.transpose @0 @1 (T.reshape @'[b*s, e] dY))
                           (T.reshape @'[b*s, e] x)
 
     runFwd (wq, wk, wv, wo) x =
-      let q       = splitHeads $ proj wq x         -- [b, h, s, hd]
+      let q       = splitHeads $ proj wq x -- [b, h, s, hd]
           k       = splitHeads $ proj wk x
           v       = splitHeads $ proj wv x
-          scores  = T.mulScalar scale $ mmH q (trH k)  -- [b, h, s, s]
-          weights = T.softmax @3 scores                 -- dim 3, not 2
-          attn    = mergeHeads $ mmH weights v          -- [b, s, e]
+          scores  = T.mulScalar scale $ mmH q (trH k) -- [b, h, s, s]
+          weights = T.softmax @3 scores -- dim 3, not 2
+          attn    = mergeHeads $ mmH weights v -- [b, s, e]
       in (q, k, v, weights, attn, proj wo attn)
 
     fwd (p, x) = let (_, _, _, _, _, out) = runFwd p x in out
@@ -177,17 +175,17 @@ multiHeadSelfAttention = lens fwd rev
         dWo     = wGrad attn dOut
 
         -- split gradient into heads for attention backward
-        dAttn   = splitHeads dAttn3D              -- [b, h, s, hd]
+        dAttn   = splitHeads dAttn3D -- [b, h, s, hd]
 
         -- weighted sum backward (4D now)
-        dWeights = mmH dAttn   (trH v)            -- [b, h, s, s]
-        dV       = mmH (trH weights) dAttn        -- [b, h, s, hd]
+        dWeights = mmH dAttn   (trH v) -- [b, h, s, s]
+        dV       = mmH (trH weights) dAttn -- [b, h, s, hd]
 
         -- softmax backward (dim 3)
         dScores  = softmaxBwdH weights dWeights
 
         -- scaled matmul backward
-        dQ = scaleH $ mmH dScores      k          -- [b, h, s, hd]
+        dQ = scaleH $ mmH dScores      k -- [b, h, s, hd]
         dK = scaleH $ mmH (trH dScores) q
 
         -- merge heads before weight gradients and dX

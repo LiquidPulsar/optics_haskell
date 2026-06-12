@@ -12,6 +12,7 @@ import qualified IrisNoLens as HT
 import Models (trainOne)
 import qualified Static.Iris as SI
 import qualified Static.Layers as L
+import qualified Static.Loss as SL
 import System.Exit (exitFailure)
 import Torch
   ( GD (..), Linear (..), Optimizer, Parameter, Parameterized,
@@ -248,6 +249,51 @@ testFlatten = do
     ]
 
 -------------------------
+-- testSoftMaxCELoss
+-- softMaxCELoss :: ParaLens' (T [b,c]) (T [b,c]) (T '[])
+-- fwd  (bt, bp) = -(1/b) * sum_{i,c} bt[i,c] * log_softmax(bp)[i,c]
+-- d_pred        = (1/b) * (softmax(bp) - bt)   [verified against autograd]
+-------------------------
+
+testSoftMaxCELoss :: IO [Bool]
+testSoftMaxCELoss = do
+  let bt0 = reshape [4, 3] $ asTensor
+              ([1,0,0, 0,1,0, 0,0,1, 1,0,0] :: [Float])
+      bp0 = reshape [4, 3] $ asTensor
+              ([2,1,0, 0,2,1, 1,0,2, 0.5,0.5,0] :: [Float])
+
+  -- Reference forward: -(1/B) * sumAll(bt * log_softmax(bp))
+  let ls_ref  = Torch.logSoftmax (Torch.Dim 1) bp0
+      fwd_ref = Torch.mulScalar (-(1/4) :: Float) $
+                  Torch.sumAll (Torch.mul bt0 ls_ref)
+
+  -- Reference backward via autograd
+  bpP <- makeIndependent bp0
+  let ls' = Torch.logSoftmax (Torch.Dim 1) (toDependent bpP)
+      ref_loss = Torch.mulScalar (-(1/4) :: Float) $
+                   Torch.sumAll (Torch.mul bt0 ls')
+  [dbp_ref] <- gradViaRunStep (InputModel bpP) GD ref_loss
+
+  -- Explicit expected gradient: (softmax(bp) - bt) / B
+  let q0           = Torch.softmax (Torch.Dim 1) bp0
+      dbp_expected = Torch.mulScalar ((1/4) :: Float) (Torch.sub q0 bt0)
+
+  -- Lens
+  let bt = UnsafeMkTensor bt0 :: Tensor Dev Flt [4, 3]
+      bp = UnsafeMkTensor bp0 :: Tensor Dev Flt [4, 3]
+      d1 = T.ones @'[]        :: Tensor Dev Flt '[]
+
+  let fwd_lens      = view SL.softMaxCELoss (bt, bp)
+      (_, dbp_lens) = set  SL.softMaxCELoss d1 (bt, bp)
+
+  -- reshape scalar to [1] so asValue :: [Float] is non-empty
+  sequence
+    [ check "softMaxCELoss fwd"         (reshape [1] (toDynamic fwd_lens)) (reshape [1] fwd_ref)
+    , check "softMaxCELoss d_pred auto" (toDynamic dbp_lens)               dbp_ref
+    , check "softMaxCELoss d_pred norm" (toDynamic dbp_lens)               dbp_expected
+    ]
+
+-------------------------
 -- Iris equivalence helpers
 -------------------------
 
@@ -357,6 +403,7 @@ main = do
     , testConvForward
     , testConvDK
     , testFlatten
+    , testSoftMaxCELoss
     , testIrisFwdEquiv
     , testIrisTrainStepEquiv
     , testIrisEpochEquiv

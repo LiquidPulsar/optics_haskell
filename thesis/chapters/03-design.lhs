@@ -372,9 +372,7 @@ pairs into the required shape:
 
 \begin{code}
 infixr 8 .#.
-(.#.)  ::  ParaLens p  p'  a  a'  b  b'
-       ->  ParaLens q  q'  b  b'  c  c'
-       ->  ParaLens (p,q) (p',q') a  a'  c  c'
+(.#.)  ::  ParaLens p p' a a' b b' -> ParaLens q q' b b' c c' ->  ParaLens (p,q) (p',q') a a' c c'
 f .#. g = swapFst . rotate . rightLens f . g
 \end{code}
 
@@ -385,11 +383,8 @@ Reading right-to-left, and tracking the source type at each step:
 \item |g :: Lens (q,b) (q',b') c c'|.  This is the inner parametric lens mapping |b| to |c| while carrying |q| as a parameter.
 
 \item |rightLens f| extends |f :: Lens (p,a) (p',a') b b'| to act on the
-  right slot of a pair with |q| on the left.  Composed with |g|:
-  \[
-    \mathit{rightLens}\; f \mathbin{\circ} g
-    \;::\; \mathit{Lens}\;(q,(p,a))\;(q',(p',a'))\;c\;c'
-  \]
+  right slot of a pair with |q| on the left.  Composed with |g|:\newline
+  |rightLens f . g :: Lens (q,(p,a)) (q',(p',a')) c c'|
 
 \item |rotate :: Iso ((a,b),c) _ (a,(b,c)) _| reassociates the nested triple,
   changing the source from |(q,(p,a))| to |((q,p),a)|.
@@ -410,9 +405,7 @@ Given a lens |r :: Lens q q' p p'| that relates two parameter spaces, we can
 space:
 
 \begin{code}
-repara  ::  Lens q q' p p'
-        ->  ParaLens p  p'  a  a'  b  b'
-        ->  ParaLens q  q'  a  a'  b  b'
+repara  ::  Lens q q' p p' ->  ParaLens p p' a a' b b' -> ParaLens q q' a a' b b'
 repara r = (leftLens r .)
 \end{code}
 
@@ -443,9 +436,22 @@ handles the optimiser state.
 At first glance, the |ParaLens| type appears to introduce a lot of extra
 pairing and unpairing of parameters, which could be a source of overhead. However,
 the implementation relies on the fact that these operations are \emph{isomorphisms}
-that can be optimised away by the compiler. The |swapFst|, |rotate|, and |rightLens| 
-functions are all built from simple tuple manipulations that the Haskell compiler can 
-inline and eliminate, resulting in no runtime overhead for the composition operation. 
+that can be optimised away by the compiler. The |swapFst|, |rotate|, and |rightLens|
+functions are all built from simple tuple manipulations that the Haskell compiler can
+inline and eliminate, resulting in no runtime overhead for the composition operation.
 This means that the elegant compositional structure of |ParaLens| does not
 come at the cost of performance, and the abstraction can be used freely
 without worrying about efficiency penalties.
+
+A further efficiency observation concerns the training loop itself.
+During a training step only the setter is invoked (instantiating
+$f = \mathtt{Const}\;b'$) which internally re-executes the forward
+computation before applying the backward computation.  The compiler
+therefore sees a \emph{single closed function}
+$(\theta,\,a,\,b') \to (\theta',\,a')$ rather than two separate phases
+coordinated via a runtime tape.  This gives GHC the opportunity to apply
+optimisations---common subexpression elimination, dead-code elimination,
+and cross-boundary inlining---across the combined forward and backward
+computation simultaneously, opportunities that are structurally
+unavailable to dynamic-graph frameworks where the tape acts as an opaque
+barrier between the two phases.

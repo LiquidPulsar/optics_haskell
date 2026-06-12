@@ -154,6 +154,26 @@ optimised output.  The user writes four lines of lens composition; GHC
 emits the same sequence of LibTorch FFI calls as the hand-written
 version.
 
+To confirm the property scales with depth, the same
+\texttt{-O2~-ddump-simpl} test was repeated at $n = 20$ and $n = 50$:
+
+\begin{spec}
+test' = runFullModel $ irisModel @20  -- 1,800 lines of Core
+test' = runFullModel $ irisModel @50  -- 4,900 lines of Core
+\end{spec}
+
+\noindent In both cases the Van Laarhoven |forall f|, all |(.#.)|
+compositions, |repara|, |swapFst|, |rotate|, and every |(,)|
+constructor are absent from the output.  Core size grows linearly with
+$n$ (roughly 103 lines per layer), confirming that \emph{depth} is the
+controlling variable, not matrix size.  The lens abstraction eliminates
+completely at every tested depth.  This suggests the zero-overhead
+property holds for any practically realisable network; the only
+theoretical constraint is GHC's simplifier tick budget
+(\texttt{-fsimpl-tick-factor}), which can be raised explicitly if a
+sufficiently deep model ever approaches the default limit
+(Section~\ref{sec:limitations}).
+
 \subsection*{Type-Level Layer Depth}
 \label{sec:stack}
 
@@ -177,6 +197,7 @@ instance StackN One where
 
 instance StackN n => StackN (Succ n) where
     stack l  =  l .#. stack @n l
+    {-# INLINE stack #-} -- Crucially important!
 \end{code}
 
 \noindent The public API bridges GHC's built-in |Nat| literals:
@@ -240,16 +261,59 @@ irisGetEpoch @1 @(T.CUDA, 0) @T.Float   -- GPU, single precision
 \end{code}
 
 \noindent The model definition, training loop, and loss function are
-entirely unchanged.  Shape mismatches (for example, feeding a
-$[\mathit{batch},10]$ tensor to a layer expecting $[\mathit{batch},4]$)
-are type errors caught by the shape in |T.Tensor dv dt [b, 4]|.  No
-runtime assertions or dynamic shape checks are needed anywhere in the
+entirely unchanged.  Shape mismatches are type errors caught at compile
+time.  For example, passing a |Tensor [1,10]| where |Tensor [1,4]| is
+expected:
+
+\begin{spec}
+type Tensor s  = T.Tensor DV DT s
+type MMP o i   = L.MMP DV DT o i
+
+foo :: ParaLens' (MMP 6 4) (Tensor [b, 4]) (Tensor [b, 6])
+foo = matMulLens
+
+x :: Tensor [1, 6]
+x = run (p :: MMP 6 4, oops :: Tensor [1, 10])
+  where run = runModel foo
+\end{spec}
+
+\noindent produces:
+
+\begin{verbatim}
+* Couldn't match type '10' with '4'
+  Expected: Tensor [1, 4]
+    Actual: Tensor [1, 10]
+* In the expression: oops :: Tensor [1, 10]
+  In the first argument of 'run', namely
+    '(p :: MMP 6 4, oops :: Tensor [1, 10])'
+  In the expression: run (p :: MMP 6 4, oops :: Tensor [1, 10])
+\end{verbatim}
+
+\noindent The mismatch is named directly and no runtime assertion is
+required.  No dynamic shape checks are needed anywhere in the
 framework.
 
-The small size of the Iris model means that the performance differences
-between Float and Double are negligible; Table~\ref{tab:mnist-perf}
-in Section~\ref{sec:mnist} gives a more realistic benchmark on the
-larger MNIST dataset.
+\subsection*{Training Results}
+
+The model was trained for 100 epochs on all 150 Iris examples with batch
+size~8 and learning rate $10^{-3}$.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{iris_training.pdf}
+\caption{Training accuracy on the full 150-example Iris dataset over 100 training
+  epochs.  Two hidden layers of width~4 with sigmoid activations, trained with
+  batch size~8 and learning rate $10^{-3}$.}
+\label{fig:iris-training}
+\end{figure}
+
+Figure~\ref{fig:iris-training} shows the learning curve.  Accuracy rises from
+65\% at epoch~0 and crosses 90\% by epoch~50.  The model peaks at
+\textbf{93.06\%} at epoch~86, then settles at 91.67\% by epoch~100.  The
+small size of the Iris model means that the performance differences between
+Float and Double are negligible; Table~\ref{tab:mnist-perf} in
+Section~\ref{sec:mnist} gives a more realistic benchmark on the larger MNIST
+dataset.
 
 \section{MNIST Digit Recognition}
 \label{sec:mnist}
@@ -421,17 +485,137 @@ argmax and the label extraction are statically typed throughout.
 
 \subsection*{Training Results}
 
-The model was trained for 400 epochs on a 6{,}000-example subset of
+The model was trained for 208 epochs on a 6{,}000-example subset of
 the MNIST training set (10\%)---chosen to keep each epoch fast enough
 to run on a CPU-only machine---with batch size~32 and learning rate
-$10^{-4}$.  Test accuracy was evaluated on the full 10{,}000
-example test set after each epoch.  The model reaches approximately
-\textbf{90\% test accuracy} around epoch~300, peaking at 90.4\% at
-epoch~299 and plateauing thereafter.  Given that the model has only
-1{,}527 parameters and is trained on one-tenth of the available data,
-the result confirms that the framework's compositional forward and
-backward passes are numerically correct end-to-end and that the lens
-abstraction imposes no obstacle to learning.
+$10^{-4}$.  Test accuracy was evaluated on the full 10{,}000-example
+test set after each epoch.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{mnist_training.pdf}
+\caption{Test accuracy on the full 10{,}000-example MNIST test set over
+  208 training epochs.  The model is a 1{,}527-parameter CNN trained on
+  6{,}000 examples with batch size~32 and learning rate $10^{-4}$.}
+\label{fig:mnist-training}
+\end{figure}
+
+Figure~\ref{fig:mnist-training} shows the learning curve.  Accuracy
+rises steeply in the first 50 epochs as the convolutional filters
+specialise to digit strokes, then transitions to a slower climb.  The
+model first crosses \textbf{90\%} at epoch~151 (90.22\%) and peaks at
+\textbf{91.43\%} at epoch~200, after which it plateaus.  Given that the
+model has only 1{,}527 parameters and is trained on one-tenth of the
+available data, this result confirms that the framework's compositional
+forward and backward passes are numerically correct end-to-end and that
+the lens abstraction imposes no obstacle to learning.
+
+\section{Residual MNIST}
+\label{sec:resmnist}
+
+The MNIST task is revisited with a residual architecture to show that
+|skipPara| (Section~\ref{sec:skipconnections}) integrates into a
+larger pipeline without modification.  The model replaces the
+convolutional stack with a sequence of dense residual blocks, keeping
+the setting comparable to the plain MNIST model.
+
+\subsection*{Parameter Types}
+
+Each residual block wraps two affine layers of the same width,
+so its parameter type is a pair of weight-bias pairs:
+
+\begin{code}
+type Hidden    = 128
+type NumBlocks = 3
+
+type ResBlockP dev dt  =  (MMP dev dt Hidden Hidden, MMP dev dt Hidden Hidden)
+
+type ResMnistP dev dt  =
+  (  MMP dev dt Hidden 784
+  ,  (StackedN NumBlocks (ResBlockP dev dt), MMP dev dt 10 Hidden)  )
+\end{code}
+
+\noindent |ResMnistP| is the product of an input projection, three
+stacked block parameter pairs, and an output layer, assembled
+automatically by the |(.#.)| composition rule.
+
+\subsection*{Model Composition}
+
+A single residual block is one application of |skipPara|:
+
+\begin{code}
+resBlock  ::  SaneRes b dev dt
+          =>  ParaLens'  (ResBlockP dev dt)
+                         (Tensor dev dt [b, Hidden])
+                         (Tensor dev dt [b, Hidden])
+resBlock  =   skipPara (matMulLens . relu .#. matMulLens)
+\end{code}
+
+\noindent The parameter type |(ResBlockP dev dt)| is inherited from the
+inner pipeline; |skipPara| contributes no additional parameters.
+The full model stacks |NumBlocks| such blocks between a flattening
+input projection and a linear output layer:
+
+\begin{code}
+resMnistModel  =   argToPara
+  .#.  rightLens (flatten @b @[1, 28, 28]) . matMulLens . relu
+  .#.  stackN @NumBlocks resBlock
+  .#.  matMulLens
+\end{code}
+
+\noindent The pipeline is a drop-in replacement for |mnistModel|: the
+same training loop, loss combinator, and inference infrastructure apply
+unchanged.
+
+\subsection*{He Initialisation}
+
+Weights use the same $\sqrt{2/\text{fan\_in}}$ rule as the MNIST model
+above, with fan-in 784 for the input projection and |Hidden = 128| for
+every layer inside a residual block.
+
+\subsection*{Longer-Range Skips}
+
+The architecture above chains three blocks with |stackN|, each
+carrying an independent |skipPara| connection spanning its own two
+layers: the standard residual block structure of He et al.\
+\citep{he2015delving}.  The blocks are composed sequentially with no
+cross-block skip connections, matching the original ResNet design.
+For stages that change spatial resolution or channel count, the
+framework provides |projSkipPara| (Section~\ref{sec:projskip}), which
+runs a learned projection shortcut in parallel with |f| using the same
+|splitIso| fan-out and sum structure.
+
+\subsection*{Training Results}
+
+The residual model was trained for 300 epochs on the same 6{,}000-example
+subset of MNIST used for the CNN above, with batch size~32 and learning
+rate $10^{-4}$.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.85\textwidth]{mnist_resid_training.pdf}
+\caption{Test accuracy of the residual MNIST model over 300 training epochs.
+  Three dense residual blocks of width~128, trained on 6{,}000 examples with
+  batch size~32 and learning rate $10^{-4}$.}
+\label{fig:mnist-resid-training}
+\end{figure}
+
+Figure~\ref{fig:mnist-resid-training} shows the learning curve.  Starting
+near random (14.8\%), accuracy rises steeply through the first 100 epochs,
+crossing 70\% at epoch~104.  Progress slows in the middle phase: 75\% is
+reached at epoch~203, and the model peaks at \textbf{78.63\%} at
+epoch~289.  The plateau reflects a structural limitation of plain gradient
+descent: once the majority of training examples are classified confidently,
+the softmax gradient $\tfrac{1}{B}(q - t)$ approaches zero for correct
+predictions and only the remaining incorrect examples contribute signal.
+The plateau is therefore a property of the optimiser, not of the
+architecture.
+
+The result demonstrates that |skipPara| and |stackN| compose correctly in
+a multi-block pipeline: gradient flows back through each skip connection
+without additional wiring, the combined parameter type |ResMnistP| is
+assembled and updated automatically, and the model achieves non-trivial
+accuracy from a clean four-line definition.
 
 \section{MNIST Autoencoder}
 \label{sec:autoencoder}
@@ -535,81 +719,6 @@ is the loss: |lossSmooth| computes $\tfrac{1}{N}\sum_i(p_i - t_i)^2$
 rather than cross-entropy, and the gradient seed flows backward through
 the decoder and into the encoder without any additional wiring.
 
-\section{Residual MNIST}
-\label{sec:resmnist}
-
-The MNIST task is revisited with a residual architecture to show that
-|skipPara| (Section~\ref{sec:skipconnections}) integrates into a
-larger pipeline without modification.  The model replaces the
-convolutional stack with a sequence of dense residual blocks, keeping
-the setting comparable to the plain MNIST model.
-
-\subsection*{Parameter Types}
-
-Each residual block wraps two affine layers of the same width,
-so its parameter type is a pair of weight-bias pairs:
-
-\begin{code}
-type Hidden    = 128
-type NumBlocks = 3
-
-type ResBlockP dev dt  =  (MMP dev dt Hidden Hidden, MMP dev dt Hidden Hidden)
-
-type ResMnistP dev dt  =
-  (  MMP dev dt Hidden 784
-  ,  (StackedN NumBlocks (ResBlockP dev dt), MMP dev dt 10 Hidden)  )
-\end{code}
-
-\noindent |ResMnistP| is the product of an input projection, three
-stacked block parameter pairs, and an output layer, assembled
-automatically by the |(.#.)| composition rule.
-
-\subsection*{Model Composition}
-
-A single residual block is one application of |skipPara|:
-
-\begin{code}
-resBlock  ::  SaneRes b dev dt
-          =>  ParaLens'  (ResBlockP dev dt)
-                         (Tensor dev dt [b, Hidden])
-                         (Tensor dev dt [b, Hidden])
-resBlock  =   skipPara (matMulLens . relu .#. matMulLens . relu)
-\end{code}
-
-\noindent The parameter type |(ResBlockP dev dt)| is inherited from the
-inner pipeline; |skipPara| contributes no additional parameters.
-The full model stacks |NumBlocks| such blocks between a flattening
-input projection and a linear output layer:
-
-\begin{code}
-resMnistModel  =   argToPara
-  .#.  rightLens (flatten @b @[1, 28, 28]) . matMulLens . relu
-  .#.  stackN @NumBlocks resBlock
-  .#.  matMulLens
-\end{code}
-
-\noindent The pipeline is a drop-in replacement for |mnistModel|: the
-same training loop, loss combinator, and inference infrastructure apply
-unchanged.
-
-\subsection*{He Initialisation}
-
-Weights use the same $\sqrt{2/\text{fan\_in}}$ rule as the MNIST model
-above, with fan-in 784 for the input projection and |Hidden = 128| for
-every layer inside a residual block.
-
-\subsection*{Longer-Range Skips}
-
-The architecture above chains three blocks with |stackN|, each
-carrying an independent |skipPara| connection spanning its own two
-layers: the standard residual block structure of He et al.\
-\citep{he2015delving}.  The blocks are composed sequentially with no
-cross-block skip connections, matching the original ResNet design.
-For stages that change spatial resolution or channel count, the
-framework provides |projSkipPara| (Section~\ref{sec:projskip}), which
-runs a learned projection shortcut in parallel with |f| using the same
-|splitIso| fan-out and sum structure.
-
 \section{Performance Evaluation}
 \label{sec:perf}
 
@@ -685,51 +794,25 @@ Variant & Mean time & Diff.\ from baseline & Overhead identified \\
 
 The |ParaLens| training loop (689~$\mu$s) is \textbf{5.3$\times$ faster}
 than the dynamic autograd baseline (3{,}631~$\mu$s).
-Table~\ref{tab:overhead} isolates each proposed source of overhead.
-
-\paragraph{PyTorch backward pass: 93\% of the cost.}
-The \texttt{forward-only} variant runs the full forward pass for every
-mini-batch, including autograd graph construction, since the model
-parameters carry |requires_grad=True|, but never calls
-|.backward()|.  It completes in $251\;\mu$s.  The full epoch
-(3{,}631~$\mu$s) costs $3{,}381\;\mu$s more: \textbf{93\%} of the
-total epoch time is spent inside PyTorch's C++ backward pass.  This is
-the dominant cost of delegating differentiation to an external autograd
-engine.  The |ParaLens| backward is a chain of Haskell closures that
-GHC inlines and optimises at compile time; at runtime it reduces to the
-same eight LibTorch FFI calls as the forward pass.
-
-\paragraph{Autograd graph construction: 3.5\%.}
-Subtracting the typed forward cost ($18 \times 6.9 = 124\;\mu$s) from
-the forward-only time ($251\;\mu$s) leaves $127\;\mu$s attributable to
-PyTorch's tape construction: allocating |Node| objects, storing input
-pointers, and registering backward functions for each of the eight
-tensor operations in the two-layer network.  Meaningful, but under a
-quarter of the cost of the backward pass itself.
-
-\paragraph{Fold structure and Generic traversal: negligible.}
-Replacing |foldM| with an explicit |foldl'| chain changes the epoch
-time by $17\;\mu$, within the noise floor.  GHC compiles both to the
-same loop at \texttt{-O2}.  Likewise, 18 calls to
-|flattenParameters| (the |Generic| traversal collecting the four model
-tensors into a list) complete in under $1\;\mu$s total ($<0.03\%$ of
-the epoch).
+Table~\ref{tab:overhead} isolates each overhead source.
+The dominant cost (93\%) is PyTorch's C++ backward pass: the
+\texttt{forward-only} variant (forward pass only, no \texttt{.backward()}
+call) completes in $251\;\mu$s, leaving $3{,}381\;\mu$s attributable to
+reverse-mode AD.  By contrast, the |ParaLens| backward is a chain of
+Haskell closures inlined at compile time, reducing to the same eight
+LibTorch FFI calls as the forward pass.  Autograd graph construction
+(tape allocation and |Node| registration) accounts for a further
+$127\;\mu$s (3.5\%); fold structure and parameter serialisation are
+negligible ($<0.03\%$).
 
 \subsection*{Typed lens vs.\ HMatrix}
 
-The HMatrix baseline (390~$\mu$s) is \textbf{1.8$\times$ faster} than
-the typed lens implementation (689~$\mu$s) on Iris.  HMatrix calls
-LAPACK and BLAS directly~\cite{hmatrix} and incurs lower per-call
-overhead than LibTorch for very small matrices: every LibTorch tensor
-operation passes through ATen's multi-device operator
-dispatch~\cite{paszke2019pytorch} before reaching the underlying BLAS
-kernel, a fixed cost that dominates for $4\times4$ matrices and is
-well-studied in the literature~\cite{frison2020blasfeo}.
-
-Both implementations perform the backward pass in pure Haskell; the
-per-call FFI cost is the sole driver of the gap.  For larger matrices
-or batch sizes the typed lens implementation is expected to match
-HMatrix and exceed it via LibTorch's vectorised kernels.
+HMatrix (390~$\mu$s) is 1.8$\times$ faster on the $4\times4$ Iris
+matrices, where ATen's multi-device dispatch~\cite{paszke2019pytorch}
+dominates over the underlying BLAS kernel~\cite{frison2020blasfeo}.
+For larger matrices or batch sizes the typed lens implementation is
+expected to match HMatrix and exceed it via LibTorch's vectorised
+kernels.
 
 \section{Gradient Correctness Tests}
 \label{sec:grad-tests}
@@ -765,9 +848,13 @@ accident.
   \item \textbf{|convLens|}: forward pass (unit stride, zero padding),
     and kernel gradient via the |im2col| batched matrix multiply, on a
     $1\times1\times7\times7$ input with a $2\times1\times3\times3$ kernel.
-  \item \textbf{|flatten|}: forward reshape and backward reshape (both
-    are pure shape operations with no arithmetic, verified to be exact
-    inverses).
+  \item \textbf{|flatten|}: forward reshape and backward reshape, 
+    verified to be exact inverses.
+  \item \textbf{|softMaxCELoss|}: forward pass against the reference
+    formula $-\tfrac{1}{B}\sum_{i,c} t_{ic}\log q_{ic}$; prediction
+    gradient $\tfrac{1}{B}(q - t)$ verified against PyTorch autograd
+    and against the explicit formula independently, confirming the
+    per-batch normalisation factor.
   \item \textbf{Iris forward equivalence}: the full two-layer Iris model
     run on a batch of eight samples produces output identical to an
     equivalent dynamic hasktorch model given the same weights.

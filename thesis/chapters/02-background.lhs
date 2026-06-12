@@ -398,8 +398,7 @@ Standard function composition |(.)| has type |(b -> c) -> (a -> b) -> (a -> c)|,
 so |x . y| unifies immediately:
 
 \begin{code}
--- x . y :: Lens s t c d
---        = forall f . Functor f => (c -> f d) -> (s -> f t)
+x . y :: Lens s t c d -- forall f . Functor f => (c -> f d) -> (s -> f t)
 \end{code}
 
 No glue code required: composing lenses with |(.)| is simply function
@@ -457,12 +456,62 @@ learners corresponds directly to composition of update rules, without
 the explicit Para construction.  Cruttwell et al.\ unify and generalise
 both lines of work within the CRDC framework.
 
+\subsection*{Grenade}
+
+Grenade~\citep{grenade} is a dependently-typed neural network library for
+Haskell whose \texttt{Network layers shapes} type encodes both layer
+types and intermediate tensor shapes at the type level.  It shares the
+present work's goal of compile-time architectural checking, but has three
+limitations that motivated a fresh approach: the intermediate shape list
+must be written by hand (the present framework infers it automatically
+from |(.#.)| composition); it is built on \texttt{hmatrix}~\citep{hmatrix},
+which is restricted to one- and two-dimensional arrays and therefore
+cannot track shapes for convolution or attention tensors natively; and it
+provides no GPU backend.  The repository has not received substantive
+updates since 2022.
+
+\subsection*{The \texttt{backprop} Library}
+
+Le's \texttt{backprop}~\citep{backprop} library brings reverse-mode
+automatic differentiation to Haskell by tracing the forward computation
+at runtime and constructing a dynamic graph from which gradients are
+derived.  The approach is analogous to PyTorch's autograd: the programmer
+writes only the forward pass, and the backward pass is produced
+automatically.
+
+One might ask whether \texttt{backprop} could serve as the backward-pass
+mechanism within a lens framework, reducing the lens setter to a derived
+artefact.  This would be self-defeating.  A Van Laarhoven lens is already
+a single higher-rank function---|forall f. Functor f => (a -> f b) -> s ->
+f t|---not a pair of functions stored together.  The getter and setter are
+both specialisations of this one polymorphic function via |f = Const| and
+|f = Identity|; the ``hold one function rather than two'' goal is already
+achieved by the lens itself.  The lens setter is not a convenience wrapper
+around a gradient computation; it \emph{is} the gradient computation,
+statically encoded.  Replacing it with a traced tape would reintroduce the
+runtime overhead the framework is designed to eliminate: the backward pass
+of a Van Laarhoven lens collapses to a direct chain of tensor operations
+at compile time (Section~\ref{sec:zero-overhead}), whereas a dynamic graph
+cannot be inlined away.
+
+The deeper distinction is categorical.  In this framework the update rule
+$\theta \leftarrow \theta + \partial\theta$ is the CRDC natural addition,
+not a gradient-specific operation; the sign and magnitude of
+$\partial\theta$ are controlled externally by the learning-rate cap, and
+the same structural update rule applies in any CRDC, including discrete
+ones.  \texttt{backprop} is tied to differentiable, real-valued functions
+and has no account of this generality.  The two libraries therefore solve
+different problems: \texttt{backprop} makes gradient computation
+convenient; this thesis makes the categorical structure of gradient-based
+learning explicit and zero-overhead.
+
 \subsection*{Conventional Frameworks: PyTorch and JAX}
 
 The dominant operational frameworks treat neural networks as imperative
-programs annotated with automatic differentiation.  Gradients are
-computed by tracing the forward computation graph at runtime and
-applying reverse-mode AD.
+programs annotated with automatic differentiation.  In define-by-run
+systems such as PyTorch's eager mode, gradients are computed by tracing
+the forward computation graph afresh on each step and applying
+reverse-mode AD.
 
 This differs from the categorical approach in three respects.  First,
 the optimiser is a global object that maintains state separately from
@@ -475,6 +524,24 @@ combined; the present framework reports them as type errors at compile
 time.  Third, there is no clear categorical account of what the
 composition of two PyTorch modules means mathematically; here,
 composition is literally morphism composition in $\mathbf{Para}(C)$.
+
+JAX warrants separate treatment, since it does not rebuild a tape per
+step.  A jitted JAX program traces the forward function once and lowers
+it through XLA to a compiled, kernel-fused executable, so the per-step
+tracing cost this framework avoids is largely absent there as well.  The
+distinction is therefore not raw overhead but how it is removed and what
+is guaranteed.  JAX eliminates overhead through a separate staged
+pipeline: a tracer that specialises the function to concrete shapes, an
+intermediate \texttt{jaxpr}, and a domain-specific compiler.  The lens
+backward pass, by contrast, is erased by GHC's general-purpose optimiser
+acting on ordinary source, with no tracer and no graph intermediate
+representation (Section~\ref{sec:zero-overhead}).  And JAX's shape
+checking is performed by that tracer when the function is specialised on
+concrete inputs, not by the host type system: an ill-shaped model is
+rejected only once it is traced, whereas here the same mismatch is a type
+error in the program text, caught before any code runs and independently
+of any input.  Neither framework, finally, offers a categorical account
+of composition of the kind made precise above.
 
 \subsection*{Hasktorch}
 
