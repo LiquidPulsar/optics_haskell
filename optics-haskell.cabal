@@ -74,6 +74,7 @@ library
         Static.Iris
         Static.Autoencoder
         Static.Attention
+        Static.Demo
         Compile
         Static.Mnist
         Static.ResidualMnist

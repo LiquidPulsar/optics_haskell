@@ -49,10 +49,10 @@ memStats = do
 
 -- ─── Architecture ─────────────────────────────────────────────────────────────
 -- [batch,  1, 28, 28]
---   conv1 (3×3, no bias) → relu → maxpool (2×2) → [batch,  3, 13, 13]
---   conv2 (4×4, no bias) → relu → maxpool (2×2) → [batch,  5,  5,  5]
---   flatten                                      → [batch, 125]
---   dense (MMP 10 125)   → sigmoid               → [batch,  10]
+--   conv1 (3×3, no bias) -> relu -> maxpool (2×2) -> [batch,  3, 13, 13]
+--   conv2 (4×4, no bias) -> relu -> maxpool (2×2) -> [batch,  5,  5,  5]
+--   flatten                                       -> [batch, 125]
+--   dense (MMP 10 125)   -> sigmoid               -> [batch,  10]
 
 type BatchSize = 32
 -- 10x too much seemingly

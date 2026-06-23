@@ -196,10 +196,17 @@ irisAccuracy mmp = fromIntegral correct / fromIntegral total
     correct = length (filter id results)
     total = length results
 
+{-
+:set -XTypeApplications
+:set -XDataKinds
+-}
+
 type Device = '(T.CPU, 0)
 
 irisRes :: forall n. (CanStack n, RandStack n (InnerLayer Device T.Double)) => IO [(Double, Double)]
 irisRes = map ((asValue . T.toDynamic . irisError @n) &&& irisAccuracy @n) <$> irisBestParams @n @Device @T.Double
+
+irisRes1 = irisRes @1 -- for convenience's sake, also optimise
 
 epochsToAcc :: Double -> [Double] -> Int
 epochsToAcc r = fst . fromJust . L.find ((>= r) . snd) . zip [0 ..]

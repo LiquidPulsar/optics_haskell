@@ -1,0 +1,4 @@
+*.md
+slides.*
+!slides.pdf
+!slides.tex

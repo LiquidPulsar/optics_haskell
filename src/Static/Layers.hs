@@ -314,8 +314,9 @@ convLens ::
     ConvSideCheck w kW 1 0 oW,
     T.All KnownNat [inC, outC, h, w, batch, oH, oW],
     -- req'd by backwards pass dx calc
-    -- h ~ ((oH - 1) + kH),
-    -- w ~ ((oW - 1) + kW),
+    -- Somehow not implied by the ConvSideCheck ??!?!?!??!?!??!
+    h ~ ((oH - 1) + kH),
+    w ~ ((oW - 1) + kW),
     -- 1 <= h,
     -- 1 <= w,
     -- kH -1 <= oH,
