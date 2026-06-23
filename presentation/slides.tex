@@ -572,7 +572,7 @@ softmaxBwd w dw = w * sub dw dot               -- Y * (dY - sum_j Y_j dY_j)
 \begin{frame}[plain]
   \centering
   \vfill
-  {\Huge\bfseries\color{imperialblue} Live demonstration}\\[1.2em]
+  {\Huge\bfseries\color{imperialblue} Demonstration}\\[1.2em]
   {\large\color{imperialblue} Three things to show:}\\[0.8em]
   \begin{minipage}{0.86\textwidth}\centering\small
     1.\ the compiler computes the tensor shapes and rejects a bad architecture\\[0.3em]
@@ -584,7 +584,7 @@ softmaxBwd w dw = w * sub dw dot               -- Y * (dY - sum_j Y_j dY_j)
 
 
 %--- DEMO 1: STATIC SIZING ----------------------------------------------------
-\begin{frame}[fragile]{Demo, part 1: the compiler does the kernel-size arithmetic (live)}
+\begin{frame}[fragile]{Demo, part 1: the compiler does the kernel-size arithmetic}
   \small Every spatial dimension in the MNIST CNN is \emph{computed} by a type family
   ($o=\lfloor(h-k+2p)/s\rfloor+1$), not written by hand:
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
@@ -593,11 +593,12 @@ softmaxBwd w dw = w * sub dw dot               -- Y * (dY - sum_j Y_j dY_j)
             --flatten--> [b,125] --dense 125->10--> [b,10]
 \end{lstlisting}
   \footnotesize Change \texttt{conv1} from \texttt{3x3} to \texttt{4x4}: the compiler recomputes the
-  whole chain, the flattened width is no longer \texttt{125}, and the dense layer stops compiling.
+  whole chain, the second pool now yields \texttt{[5,4,4]} not \texttt{[5,5,5]}, and it stops compiling.
 \begin{lstlisting}[basicstyle=\ttfamily\footnotesize,backgroundcolor=\color{accent!8},keywordstyle=\color{accent}]
-  * Couldn't match type '108' with '125'   (recomputed conv->pool->flatten width)
+  * Couldn't match type '4' with '5'
+      (conv1=4x4 pools to [5,4,4], not the [5,5,5] flatten)
 \end{lstlisting}
-  \centering\footnotesize I wrote none of those intermediate sizes. A wrong kernel is a type error,
+  \centering\footnotesize No intermediate sizes were specified. A wrong kernel is a type error,
   not a runtime crash.
 \end{frame}
 
